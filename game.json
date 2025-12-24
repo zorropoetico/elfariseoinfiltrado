@@ -4,13 +4,13 @@ import {
   Settings, BookOpen, Info, Volume2, VolumeX,
   HelpCircle, ChevronRight, Gavel, X, Clock, ExternalLink,
   Crown, MicOff, Edit3, ScrollText, Sword, ChevronLeft, Music,
-  Sparkles, Trophy, AlertTriangle, Flame, PlusCircle, Trash2, Save, Upload, RefreshCw, LogOut, Loader2, CheckSquare, Square, PenLine, ClipboardCopy, CheckCircle, XCircle, Copy
+  Sparkles, Trophy, AlertTriangle, Flame, PlusCircle, Trash2, Save, Upload, RefreshCw, LogOut, Loader2, CheckSquare, Square, PenLine, ClipboardCopy, CheckCircle, XCircle, Copy, Download, Instagram
 } from 'lucide-react';
 
 // --- CONFIGURACIÓN GEMINI API ---
 const apiKey = ""; 
 
-// Helper para llamar a Gemini
+// Helper para llamar a Gemini (Solo se usa para generación de categorías nuevas o pistas de contexto)
 const callGemini = async (prompt, isJson = false) => {
   try {
     const response = await fetch(
@@ -48,37 +48,31 @@ const initAudio = () => {
     return audioCtx;
 };
 
-// Fallback robusto para portapapeles (Fix NotAllowedError)
-const copyToClipboard = async (text) => {
-  try {
-    // Intentar primero con la API moderna
-    await navigator.clipboard.writeText(text);
-  } catch (err) {
-    // Si falla (bloqueo de permisos/iframe), usar fallback legacy
-    try {
-      const textArea = document.createElement("textarea");
-      textArea.value = text;
-      
-      // Asegurar que no sea visible ni afecte el layout
-      textArea.style.position = "fixed";
-      textArea.style.left = "-9999px";
-      textArea.style.top = "0";
-      
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-      
-      const successful = document.execCommand('copy');
-      document.body.removeChild(textArea);
-      
-      if (!successful) {
-         throw new Error("Fallback copy failed");
+// Fallback robusto para portapapeles (SOLO execCommand para evitar permisos bloqueados)
+const copyToClipboard = (text) => {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    
+    // Asegurar que no sea visible ni afecte el layout
+    textArea.style.position = "fixed";
+    textArea.style.left = "-9999px";
+    textArea.style.top = "0";
+    
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    
+    return new Promise((resolve, reject) => {
+      try {
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (successful) resolve();
+        else reject(new Error("Copy failed"));
+      } catch (err) {
+        document.body.removeChild(textArea);
+        reject(err);
       }
-    } catch (fallbackErr) {
-      console.error("Clipboard failed completely:", fallbackErr);
-      throw fallbackErr;
-    }
-  }
+    });
 };
 
 const playSound = (type) => {
@@ -212,7 +206,7 @@ const toggleMusic = (enable) => {
     } catch (e) { console.error(e); }
 };
 
-// --- DATA: Modos de Juego (Mecánicas) ---
+// --- DATA: Modos de Juego ---
 const GAME_MODES = [
   { id: 'normal', label: 'Clásico', sub: '(Estándar)', icon: <Users size={20}/>, desc: 'Ronda de preguntas y momento de debate.' },
   { id: 'profeta', label: 'El Profeta', sub: '(Vidente)', icon: <Eye size={20}/>, desc: 'Un fiel conoce a los Fariseos, pero NO puede revelar su rol ni votarlos directamente.' },
@@ -225,53 +219,202 @@ const GAME_MODES = [
   { id: 'etiope', label: 'Etíope', sub: '(Confuso)', icon: <HelpCircle size={20}/>, desc: 'Un fiel no sabe la palabra, pero no es impostor. No puede revelar su rol.' }
 ];
 
-// --- DATA: Categorías ---
-const createWord = (term, ref, active = true) => ({ term, ref, active });
+// --- DATA: Categorías Completas ---
+// Estructura: createWord(termino, referencia, texto_contenido, activo)
+const createWord = (term, ref, content, active = true) => ({ term, ref, content, active });
 
 const BASE_CATEGORIES = {
-  libros: { id: 'libros', name: 'Libros Biblia', level: 'easy', words: [createWord('Génesis', 'AT'), createWord('Salmos', 'AT'), createWord('Mateo', 'NT'), createWord('Apocalipsis', 'NT'), createWord('Éxodo', 'AT'), createWord('Proverbios', 'AT'), createWord('Hechos', 'NT'), createWord('Romanos', 'NT'), createWord('Jonás', 'AT'), createWord('Daniel', 'AT')] },
-  oficios: { id: 'oficios', name: 'Oficios', level: 'easy', words: [createWord('Pastor', ''), createWord('Pescador', ''), createWord('Carpintero', ''), createWord('Rey', ''), createWord('Sacerdote', ''), createWord('Profeta', ''), createWord('Soldado', ''), createWord('Sembrador', '')] },
-  animales: { id: 'animales', name: 'Animales', level: 'easy', words: [createWord('Oveja', ''), createWord('León', ''), createWord('Serpiente', ''), createWord('Paloma', ''), createWord('Burro', ''), createWord('Pez', ''), createWord('Camello', ''), createWord('Lobo', '')] },
-  objetos: { id: 'objetos', name: 'Objetos', level: 'easy', words: [createWord('Arca', ''), createWord('Cruz', ''), createWord('Copa', ''), createWord('Túnica', ''), createWord('Corona', ''), createWord('Red', ''), createWord('Lámpara', ''), createWord('Piedra', '')] },
-  vida_jesus: { id: 'vida_jesus', name: 'Vida de Jesús', level: 'easy', words: [createWord('Jesús', 'Salvador'), createWord('Pesebre', 'Nacimiento'), createWord('Bautismo', 'Jordán'), createWord('Tentación', 'Desierto'), createWord('Transfiguración', 'Monte'), createWord('Última Cena', 'Jueves'), createWord('Crucifixión', 'Gólgota'), createWord('Resurrección', 'Domingo'), createWord('Ascensión', 'Nubes')] },
-  profetas: { id: 'profetas', name: 'Profetas', level: 'medium', words: [createWord('Moisés', ''), createWord('Elías', ''), createWord('Isaías', ''), createWord('Jeremías', ''), createWord('Jonás', ''), createWord('Daniel', ''), createWord('Samuel', ''), createWord('Juan Bautista', ''), createWord('David', ''), createWord('Noé', '')] },
-  milagros: { id: 'milagros', name: 'Milagros', level: 'medium', words: [createWord('Agua en vino', 'Caná'), createWord('Mar Rojo', 'Éxodo'), createWord('Lázaro', 'Resurrección'), createWord('Panes y Peces', 'Multiplicación'), createWord('Caminar sobre agua', ''), createWord('Ciego Bartimeo', ''), createWord('Paralítico', 'Techo')] },
-  mujeres: { id: 'mujeres', name: 'Mujeres', level: 'medium', words: [createWord('María', ''), createWord('Eva', ''), createWord('Sara', ''), createWord('Ester', ''), createWord('Rut', ''), createWord('Dalila', ''), createWord('Magdalena', ''), createWord('Marta', ''), createWord('Rahab', '')] },
-  lugares: { id: 'lugares', name: 'Lugares', level: 'medium', words: [createWord('Jerusalén', ''), createWord('Belén', ''), createWord('Nazaret', ''), createWord('Galilea', ''), createWord('Jordán', ''), createWord('Egipto', ''), createWord('Sinaí', ''), createWord('Jericó', ''), createWord('Getsemaní', '')] },
-  reyes: { id: 'reyes', name: 'Reyes', level: 'medium', words: [createWord('David', ''), createWord('Salomón', ''), createWord('Saúl', ''), createWord('Herodes', ''), createWord('Faraón', ''), createWord('Nabucodonosor', ''), createWord('Ezequías', '')] },
-  bandas: { id: 'bandas', name: 'Música Cristiana', level: 'medium', words: [createWord('Hillsong', ''), createWord('Redimi2', ''), createWord('Marcos Witt', ''), createWord('Jesús Adrián Romero', ''), createWord('Tercer Cielo', ''), createWord('Barak', ''), createWord('Miel San Marcos', ''), createWord('Christine D\'Clario', ''), createWord('Rescate', ''), createWord('Funky', '')] },
-  random: { id: 'random', name: 'Biblical Random', level: 'medium', words: [createWord('Fe', ''), createWord('Gracia', ''), createWord('Pecado', ''), createWord('Diezmo', ''), createWord('Ayuno', ''), createWord('Oración', ''), createWord('Bautismo', ''), createWord('Santa Cena', '')] },
-  reformadores: { id: 'reformadores', name: 'Reformadores', level: 'hard', words: [createWord('Lutero', ''), createWord('Calvino', ''), createWord('Spurgeon', ''), createWord('Wesley', ''), createWord('Knox', ''), createWord('Zuinglio', '')] },
-  villanos: { id: 'villanos', name: 'Villanos', level: 'hard', words: [createWord('Goliat', ''), createWord('Judas', ''), createWord('Pilatos', ''), createWord('Jezabel', ''), createWord('Caín', ''), createWord('Satanás', ''), createWord('Caifás', ''), createWord('Amán', '')] }
+  libros: { id: 'libros', name: 'Libros Biblia', level: 'easy', words: [
+    createWord('Génesis', 'Génesis 1:1', 'En el principio creó Dios los cielos y la tierra.'),
+    createWord('Salmos', 'Salmos 23:1', 'El Señor es mi pastor, nada me faltará.'),
+    createWord('Mateo', 'Mateo 1:1', 'Libro de la genealogía de Jesucristo, hijo de David, hijo de Abraham.'),
+    createWord('Apocalipsis', 'Apocalipsis 1:1', 'La revelación de Jesucristo, que Dios le dio.'),
+    createWord('Éxodo', 'Éxodo 20:1', 'Y habló Dios todas estas palabras.'),
+    createWord('Proverbios', 'Proverbios 1:7', 'El temor del Señor es el principio de la sabiduría.'),
+    createWord('Hechos', 'Hechos 1:8', 'Pero recibiréis poder cuando haya venido sobre vosotros el Espíritu Santo.'),
+    createWord('Romanos', 'Romanos 1:16', 'Porque no me avergüenzo del evangelio, pues es poder de Dios.'),
+    createWord('Jonás', 'Jonás 1:17', 'Y el Señor dispuso un gran pez que se tragara a Jonás.'),
+    createWord('Daniel', 'Daniel 6:22', 'Mi Dios envió su ángel, que cerró la boca de los leones.'),
+    createWord('Isaías', 'Isaías 9:6', 'Porque un niño nos ha nacido, un hijo nos ha sido dado.'),
+    createWord('Lucas', 'Lucas 19:10', 'Porque el Hijo del Hombre ha venido a buscar y a salvar lo que se había perdido.'),
+    createWord('Juan', 'Juan 3:16', 'Porque de tal manera amó Dios al mundo, que ha dado a su Hijo unigénito.'),
+    createWord('1 Corintios', '1 Corintios 13:13', 'Y ahora permanecen la fe, la esperanza y el amor, estos tres.'),
+    createWord('Efesios', 'Efesios 2:8', 'Porque por gracia habéis sido salvados por medio de la fe.'),
+    createWord('Levítico', 'Levítico 19:18', 'Amarás a tu prójimo como a ti mismo.'),
+    createWord('Deuteronomio', 'Deuteronomio 6:4', 'Escucha, oh Israel, el Señor es nuestro Dios, el Señor uno es.'),
+    createWord('Josué', 'Josué 1:9', '¿No te lo he ordenado yo? ¡Sé fuerte y valiente!'),
+    createWord('Jueces', 'Jueces 21:25', 'En aquellos días no había rey en Israel; cada uno hacía lo que bien le parecía.'),
+    createWord('Rut', 'Rut 1:16', 'Adonde tú vayas, iré yo, y donde tú mores, moraré.'),
+    createWord('Eclesiastés', 'Eclesiastés 3:1', 'Hay un tiempo señalado para todo, y hay un tiempo para cada suceso.'),
+    createWord('Cantares', 'Cantares 2:16', 'Mi amado es mío, y yo soy suya.'),
+    createWord('Jeremías', 'Jeremías 29:11', 'Porque yo sé los planes que tengo para vosotros, declara el Señor.'),
+    createWord('Ezequiel', 'Ezequiel 37:4', 'Profetiza sobre estos huesos, y diles: Huesos secos, oíd la palabra del Señor.')
+  ]},
+  oficios: { id: 'oficios', name: 'Oficios', level: 'easy', words: [
+    createWord('Pastor', 'Salmos 23:1', 'El Señor es mi pastor, nada me faltará.'),
+    createWord('Pescador', 'Mateo 4:19', 'Venid en pos de mí, y os haré pescadores de hombres.'),
+    createWord('Carpintero', 'Marcos 6:3', '¿No es este el carpintero, el hijo de María?'),
+    createWord('Rey', '1 Samuel 8:5', 'Constitúyenos ahora un rey para que nos juzgue, como todas las naciones.'),
+    createWord('Sacerdote', 'Hebreos 4:14', 'Teniendo, pues, un gran sumo sacerdote que trascendió los cielos, Jesús.'),
+    createWord('Profeta', 'Deuteronomio 18:18', 'Un profeta como tú levantaré de entre sus hermanos.'),
+    createWord('Soldado', '2 Timoteo 2:3', 'Sufre penalidades conmigo, como buen soldado de Cristo Jesús.'),
+    createWord('Sembrador', 'Mateo 13:3', 'He aquí, el sembrador salió a sembrar.'),
+    createWord('Recaudador', 'Lucas 5:27', 'Vio a un recaudador de impuestos llamado Leví sentado en la oficina.'),
+    createWord('Fariseo', 'Lucas 18:11', 'El fariseo puesto en pie, oraba para sí de esta manera.'),
+    createWord('Escriba', 'Esdras 7:6', 'Este Esdras era escriba diligente en la ley de Moisés.'),
+    createWord('Centurión', 'Mateo 8:5', 'Y al entrar Jesús en Capernaúm, se le acercó un centurión suplicándole.'),
+    createWord('Juez', 'Jueces 2:16', 'Entonces el Señor levantó jueces que los libraron.'),
+    createWord('Copero', 'Nehemías 1:11', 'Yo era entonces copero del rey.'),
+    createWord('Panadero', 'Génesis 40:1', 'El copero y el panadero del rey de Egipto ofendieron a su señor.'),
+    createWord('Alfarero', 'Jeremías 18:6', '¿No puedo yo hacer con vosotros, casa de Israel, lo mismo que hace este alfarero?'),
+    createWord('Médico', 'Colosenses 4:14', 'Os saludan Lucas, el médico amado, y Demas.'),
+    createWord('Tiendero', 'Hechos 18:3', 'Y como eran del mismo oficio... pues su oficio era hacer tiendas.')
+  ]},
+  animales: { id: 'animales', name: 'Animales', level: 'easy', words: [
+    createWord('Oveja', 'Isaías 53:7', 'Como oveja fue llevado al matadero.'),
+    createWord('León', '1 Pedro 5:8', 'Vuestro adversario, el diablo, anda como león rugiente.'),
+    createWord('Serpiente', 'Génesis 3:1', 'Y la serpiente era más astuta que cualquiera de los animales del campo.'),
+    createWord('Paloma', 'Mateo 3:16', 'Vio al Espíritu de Dios que descendía como paloma.'),
+    createWord('Burro', 'Números 22:28', 'Entonces el Señor abrió la boca del asna.'),
+    createWord('Pez', 'Jonás 1:17', 'Y el Señor dispuso un gran pez que se tragara a Jonás.'),
+    createWord('Camello', 'Mateo 19:24', 'Es más fácil que un camello pase por el ojo de una aguja.'),
+    createWord('Lobo', 'Mateo 7:15', 'Vienen a vosotros con vestidos de ovejas, pero por dentro son lobos rapaces.'),
+    createWord('Águila', 'Isaías 40:31', 'Se remontarán con alas como las águilas.'),
+    createWord('Oso', '2 Reyes 2:24', 'Salieron dos osas del bosque y despedazaron a cuarenta y dos muchachos.'),
+    createWord('Cuervo', '1 Reyes 17:4', 'Y he ordenado a los cuervos que te sustenten allí.'),
+    createWord('Cabra', 'Mateo 25:32', 'Separará a unos de otros, como el pastor separa las ovejas de los cabritos.'),
+    createWord('Langosta', 'Marcos 1:6', 'Juan... comía langostas y miel silvestre.'),
+    createWord('Rana', 'Éxodo 8:2', 'Entonces heriré todo tu territorio con ranas.'),
+    createWord('Escorpión', 'Lucas 10:19', 'Os he dado autoridad para hollar serpientes y escorpiones.'),
+    createWord('Zorra', 'Lucas 13:32', 'Id y decidle a ese zorro: "He aquí, expulso demonios".'),
+    createWord('Mula', 'Salmos 32:9', 'No seáis como el caballo o como el mulo, que no tienen entendimiento.'),
+    createWord('Hormiga', 'Proverbios 6:6', 'Ve, mira la hormiga, perezoso, observa sus caminos y sé sabio.'),
+    createWord('Perro', 'Proverbios 26:11', 'Como perro que vuelve a su vómito es el necio.'),
+    createWord('Ballena', 'Mateo 12:40', 'Como estuvo Jonás en el vientre del gran pez tres días.')
+  ]},
+  objetos: { id: 'objetos', name: 'Objetos', level: 'easy', words: [
+    createWord('Arca del Pacto', 'Éxodo 25:10', 'Harán también un arca de madera de acacia.'),
+    createWord('Cruz', 'Hebreos 12:2', 'Jesús... menospreciando la vergüenza, soportó la cruz.'),
+    createWord('Copa', 'Lucas 22:20', 'Esta copa es el nuevo pacto en mi sangre.'),
+    createWord('Túnica', 'Génesis 37:3', 'Israel amaba a José... y le hizo una túnica de muchos colores.'),
+    createWord('Corona', 'Apocalipsis 2:10', 'Sé fiel hasta la muerte, y yo te daré la corona de la vida.'),
+    createWord('Red', 'Lucas 5:4', 'Boga hacia lo profundo, y echad vuestras redes para pescar.'),
+    createWord('Lámpara', 'Salmos 119:105', 'Lámpara es a mis pies tu palabra, y luz para mi camino.'),
+    createWord('Piedra', '1 Samuel 17:49', 'David... sacó de allí una piedra y la lanzó con la honda.'),
+    createWord('Vara de Aarón', 'Números 17:8', 'La vara de Aarón de la casa de Leví había retoñado.'),
+    createWord('Tablas de la Ley', 'Éxodo 31:18', 'Dos tablas del testimonio, tablas de piedra escritas por el dedo de Dios.'),
+    createWord('Menorá', 'Éxodo 25:31', 'Harás además un candelabro de oro puro.'),
+    createWord('Honda', '1 Samuel 17:40', 'Tomó su cayado en la mano... y su honda estaba en su mano.'),
+    createWord('Manto', '2 Reyes 2:13', 'Recogió también el manto de Elías que se le había caído.'),
+    createWord('Trompeta', 'Josué 6:5', 'Cuando toquen prolongadamente el cuerno... el muro de la ciudad caerá.'),
+    createWord('Arpa', '1 Samuel 16:23', 'David tomaba el arpa y tocaba con su mano.'),
+    createWord('Altar', 'Génesis 8:20', 'Y edificó Noé un altar al Señor.'),
+    createWord('Incienso', 'Salmos 141:2', 'Sea mi oración como incienso delante de ti.'),
+    createWord('Aceite', 'Santiago 5:14', 'Oren por él, ungiéndole con aceite en el nombre del Señor.'),
+    createWord('Pan', 'Juan 6:35', 'Jesús les dijo: Yo soy el pan de la vida.'),
+    createWord('Espada', 'Hebreos 4:12', 'La palabra de Dios es viva y eficaz, y más cortante que cualquier espada.')
+  ]},
+  vida_jesus: { id: 'vida_jesus', name: 'Vida de Jesús', level: 'easy', words: [
+    createWord('Jesús', 'Mateo 1:21', 'Y llamarás su nombre Jesús, porque Él salvará a su pueblo.'),
+    createWord('Pesebre', 'Lucas 2:7', 'Y le acostó en un pesebre, porque no había lugar para ellos.'),
+    createWord('Bautismo', 'Marcos 1:9', 'Jesús vino de Nazaret... y fue bautizado por Juan en el Jordán.'),
+    createWord('Tentación', 'Mateo 4:1', 'Entonces Jesús fue llevado por el Espíritu al desierto para ser tentado.'),
+    createWord('Transfiguración', 'Mateo 17:2', 'Y se transfiguró delante de ellos; y su rostro resplandeció.'),
+    createWord('Última Cena', 'Lucas 22:15', 'Intensamente he deseado comer esta Pascua con vosotros.'),
+    createWord('Crucifixión', 'Juan 19:18', 'Allí le crucificaron, y con Él a otros dos.'),
+    createWord('Resurrección', 'Lucas 24:6', 'No está aquí, sino que ha resucitado.'),
+    createWord('Ascensión', 'Hechos 1:9', 'Fue alzado, y una nube le recibió y le ocultó de sus ojos.'),
+    createWord('Pedro', 'Mateo 16:18', 'Tú eres Pedro, y sobre esta roca edificaré mi iglesia.'),
+    createWord('Juan', 'Juan 13:23', 'Uno de sus discípulos, el que Jesús amaba.'),
+    createWord('Jacobo', 'Mateo 4:21', 'Vio a otros dos hermanos, Jacobo hijo de Zebedeo y Juan.'),
+    createWord('Andrés', 'Juan 1:40', 'Andrés, hermano de Simón Pedro, era uno de los dos.'),
+    createWord('Felipe', 'Juan 1:43', 'Jesús... halló a Felipe y le dijo: Sígueme.'),
+    createWord('Bartolomé', 'Mateo 10:3', 'Felipe y Bartolomé; Tomás y Mateo.'),
+    createWord('Mateo', 'Mateo 9:9', 'Vio a un hombre llamado Mateo... y le dijo: Sígueme.'),
+    createWord('Tomás', 'Juan 20:27', 'Luego dijo a Tomás: Pon aquí tu dedo, y mira mis manos.'),
+    createWord('Santiago Alfeo', 'Marcos 3:18', 'Andrés, Felipe, Bartolomé, Mateo, Tomás, Jacobo hijo de Alfeo.'),
+    createWord('Tadeo', 'Mateo 10:3', 'Jacobo hijo de Alfeo, y Lebeo, por sobrenombre Tadeo.'),
+    createWord('Simón Zelote', 'Lucas 6:15', 'Mateo, Tomás, Jacobo hijo de Alfeo, Simón llamado Zelote.'),
+    createWord('Judas Iscariote', 'Lucas 22:48', 'Judas, ¿con un beso entregas al Hijo del Hombre?'),
+    createWord('Lázaro', 'Juan 11:43', 'Gritó a gran voz: ¡Lázaro, ven fuera!'),
+    createWord('Marta', 'Lucas 10:41', 'Marta, Marta, afanada y turbada estás con muchas cosas.'),
+    createWord('María', 'Lucas 10:42', 'María ha escogido la buena parte.'),
+    createWord('Zaqueo', 'Lucas 19:5', 'Zaqueo, date prisa y desciende, porque hoy debo quedarme en tu casa.'),
+    createWord('Nicodemo', 'Juan 3:4', 'Nicodemo le dijo: ¿Cómo puede un hombre nacer siendo viejo?'),
+    createWord('Pilato', 'Mateo 27:24', 'Pilato... tomó agua y se lavó las manos delante de la multitud.'),
+    createWord('Caifás', 'Juan 11:49', 'Caifás, que era sumo sacerdote aquel año.'),
+    createWord('Barrabás', 'Marcos 15:15', 'Pilato... les soltó a Barrabás.'),
+    createWord('Centurión', 'Marcos 15:39', 'Verdaderamente este hombre era Hijo de Dios.'),
+    createWord('Mujer Samaritana', 'Juan 4:7', 'Una mujer de Samaria vino a sacar agua.'),
+    createWord('José de Arimatea', 'Marcos 15:43', 'José de Arimatea... tuvo el valor de ir a Pilato y pedir el cuerpo de Jesús.'),
+    createWord('Simón de Cirene', 'Lucas 23:26', 'Echaron mano a un tal Simón de Cirene... y le pusieron la cruz encima.')
+  ]},
+  profetas: { id: 'profetas', name: 'Profetas', level: 'medium', words: [createWord('Moisés', 'Deut 34'), createWord('Elías', '2 Rey 2'), createWord('Isaías', 'Isa 6'), createWord('Jeremías', 'Jer 1'), createWord('Jonás', 'Jon 1'), createWord('Daniel', 'Dan 6'), createWord('Samuel', '1 Sam 3'), createWord('Juan Bautista', 'Mat 3'), createWord('David', 'Salmos'), createWord('Noé', 'Gen 6'), createWord('Eliseo', '2 Rey 2'), createWord('Ezequiel', 'Eze 1'), createWord('Oseas', 'Os 1'), createWord('Joel', 'Joel 1'), createWord('Amós', 'Am 1'), createWord('Abdías', 'Abd 1'), createWord('Miqueas', 'Miq 1'), createWord('Nahúm', 'Nah 1'), createWord('Habacuc', 'Hab 1'), createWord('Sofonías', 'Sof 1'), createWord('Hageo', 'Hag 1'), createWord('Zacarías', 'Zac 1'), createWord('Malaquías', 'Mal 1'), createWord('Natán', '2 Sam 12'), createWord('Gad', '1 Sam 22'), createWord('Balaam', 'Num 22'), createWord('Débora', 'Jue 4'), createWord('Ana', 'Luc 2'), createWord('Agabo', 'Hech 11')] },
+  milagros: { id: 'milagros', name: 'Milagros', level: 'medium', words: [createWord('Agua en vino', 'Jn 2'), createWord('Mar Rojo', 'Ex 14'), createWord('Lázaro resucita', 'Jn 11'), createWord('Panes y Peces', 'Mat 14'), createWord('Caminar sobre agua', 'Mat 14'), createWord('Ciego Bartimeo', 'Mar 10'), createWord('Paralítico del techo', 'Mar 2'), createWord('Hija de Jairo', 'Mar 5'), createWord('Mujer flujo sangre', 'Mar 5'), createWord('10 Leprosos', 'Luc 17'), createWord('Tempestad calmada', 'Mar 4'), createWord('Moneda en el pez', 'Mat 17'), createWord('Higuera seca', 'Mar 11'), createWord('Oreja de Malco', 'Luc 22'), createWord('Pesca milagrosa', 'Luc 5'), createWord('Muros de Jericó', 'Jos 6'), createWord('Sol detenido', 'Jos 10'), createWord('Fuego del cielo', '1 Rey 18'), createWord('Naamán sanado', '2 Rey 5'), createWord('Mano seca', 'Mat 12')] },
+  mujeres: { id: 'mujeres', name: 'Mujeres', level: 'medium', words: [createWord('María', 'Luc 1'), createWord('Eva', 'Gen 3'), createWord('Sara', 'Gen 17'), createWord('Ester', 'Ester 4'), createWord('Rut', 'Rut 1'), createWord('Dalila', 'Jue 16'), createWord('María Magdalena', 'Luc 8'), createWord('Marta', 'Luc 10'), createWord('Rahab', 'Jos 2'), createWord('Rebeca', 'Gen 24'), createWord('Raquel', 'Gen 29'), createWord('Lea', 'Gen 29'), createWord('Miriam', 'Ex 15'), createWord('Débora', 'Jue 4'), createWord('Jael', 'Jue 4'), createWord('Ana', '1 Sam 1'), createWord('Abigail', '1 Sam 25'), createWord('Betsabé', '2 Sam 11'), createWord('Sunamita', '2 Rey 4'), createWord('Elisabeth', 'Luc 1'), createWord('Lidia', 'Hech 16'), createWord('Priscila', 'Hech 18'), createWord('Febe', 'Rom 16'), createWord('Agar', 'Gen 16'), createWord('Dina', 'Gen 34'), createWord('Tamar', 'Gen 38'), createWord('Sifrá', 'Ex 1'), createWord('Fúa', 'Ex 1'), createWord('Jezabel', '1 Rey 21'), createWord('Atalía', '2 Rey 11')] },
+  lugares: { id: 'lugares', name: 'Lugares', level: 'medium', words: [createWord('Jerusalén', 'Ciudad de Paz'), createWord('Belén', 'Casa de Pan'), createWord('Nazaret', 'Hogar de Jesús'), createWord('Galilea', 'Región Norte'), createWord('Jordán', 'Lugar de Bautismo'), createWord('Egipto', 'Tierra de esclavitud'), createWord('Sinaí', 'Monte de la Ley'), createWord('Jericó', 'Ciudad de las palmeras'), createWord('Getsemaní', 'Lugar de prensa de aceite'), createWord('Gólgota', 'Lugar de la Calavera'), createWord('Betania', 'Casa de dátiles'), createWord('Cafarnaúm', 'Aldea de Nahúm'), createWord('Emaús', 'Camino de revelación'), createWord('Sodoma', 'Ciudad destruida'), createWord('Nínive', 'Gran ciudad'), createWord('Babilonia', 'Ciudad de confusión'), createWord('Roma', 'Capital del Imperio'), createWord('Patmos', 'Isla del Apocalipsis'), createWord('Caná', 'Lugar de bodas'), createWord('Monte de los Olivos', 'Lugar de Ascensión'), createWord('Monte Carmelo', 'Desafío de Elías'), createWord('Monte Tabor', 'Transfiguración'), createWord('Mar Muerto', 'Mar Salado'), createWord('Ur', 'De los Caldeos'), createWord('Antioquía', 'Primeros Cristianos')] },
+  reyes: { id: 'reyes', name: 'Reyes', level: 'medium', words: [createWord('David', '2 Sam 5'), createWord('Salomón', '1 Rey 1'), createWord('Saúl', '1 Sam 10'), createWord('Herodes el Grande', 'Mat 2'), createWord('Faraón', 'Ex 5'), createWord('Nabucodonosor', 'Dan 2'), createWord('Ezequías', '2 Rey 18'), createWord('Is-boset', '2 Sam 2'), createWord('Roboam', '1 Rey 12'), createWord('Abiam', '1 Rey 15'), createWord('Asa', '1 Rey 15'), createWord('Josafat', '1 Rey 22'), createWord('Joram', '2 Rey 8'), createWord('Ocozías', '2 Rey 8'), createWord('Joás', '2 Rey 11'), createWord('Amasías', '2 Rey 14'), createWord('Uzías', '2 Rey 15'), createWord('Jotam', '2 Rey 15'), createWord('Acaz', '2 Rey 16'), createWord('Manasés', '2 Rey 21'), createWord('Amón', '2 Rey 21'), createWord('Josías', '2 Rey 22'), createWord('Joacim', '2 Rey 23'), createWord('Sedequías', '2 Rey 24'), createWord('Ciro', 'Esd 1'), createWord('Darío', 'Dan 6'), createWord('Artajerjes', 'Neh 2'), createWord('Agripa', 'Hech 26'), createWord('Herodes Antipas', 'Luc 23')] },
+  bandas: { id: 'bandas', name: 'Música Cristiana', level: 'medium', words: [
+    createWord('Hillsong', 'Australia', 'Banda de adoración australiana famosa por "Oceans".'),
+    createWord('Redimi2', 'Rep. Dom.', 'Rapero cristiano dominicano conocido por letras radicales.'),
+    createWord('Marcos Witt', 'México', 'Pionero de la alabanza y adoración en español.'),
+    createWord('Jesús Adrián Romero', 'México', 'Cantante y compositor de música pop cristiana.'),
+    createWord('Tercer Cielo', 'Dúo', 'Dúo de música pop contemporánea, esposos.'),
+    createWord('Barak', 'Rep. Dom.', 'Grupo de adoración conocido por "Espíritu Santo".'),
+    createWord('Miel San Marcos', 'Guatemala', 'Banda guatemalteca de alabanza y adoración.'),
+    createWord('Christine D\'Clario', 'USA', 'Líder de adoración conocida por su potente voz.'),
+    createWord('Rescate', 'Argentina', 'Banda argentina de rock gospel.'),
+    createWord('Funky', 'P. Rico', 'Cantante puertorriqueño de música urbana cristiana.'),
+    createWord('Majo y Dan', 'México', 'Matrimonio mexicano de música folk/pop.'),
+    createWord('Un Corazón', 'México', 'Movimiento de música indie/worship joven.'),
+    createWord('Alex Campos', 'Colombia', 'Cantante colombiano de rock/pop cristiano.'),
+    createWord('Marcela Gándara', 'México', 'Cantante mexicana de música cristiana.'),
+    createWord('Lilly Goodman', 'Rep. Dom.', 'Cantante dominicana con una voz prodigiosa.'),
+    createWord('Generación 12', 'Colombia', 'Banda de adoración de la iglesia MCI.'),
+    createWord('Elevation Worship', 'USA', 'Banda de adoración de Elevation Church.'),
+    createWord('Bethel Music', 'USA', 'Colectivo de adoración de Bethel Church.'),
+    createWord('Maverick City', 'USA', 'Colectivo musical que rompe barreras culturales.'),
+    createWord('Gateway Worship', 'USA', 'Equipo de adoración de Gateway Church.')
+  ]},
+  random: { id: 'random', name: 'Biblical Random', level: 'medium', words: [createWord('Fe', 'Heb 11'), createWord('Gracia', 'Efe 2:8'), createWord('Pecado', 'Rom 3:23'), createWord('Diezmo', 'Mal 3'), createWord('Ayuno', 'Isa 58'), createWord('Oración', '1 Tes 5:17'), createWord('Bautismo', 'Rom 6'), createWord('Santa Cena', '1 Cor 11'), createWord('Santidad', '1 Ped 1:16'), createWord('Perdón', 'Col 3:13'), createWord('Arrepentimiento', 'Hech 3:19'), createWord('Salvación', 'Hech 4:12'), createWord('Gloria', 'Rom 3:23'), createWord('Alabanza', 'Sal 150'), createWord('Adoración', 'Jn 4:23'), createWord('Justificación', 'Rom 5:1'), createWord('Redención', 'Efe 1:7'), createWord('Pacto', 'Jer 31'), createWord('Ley', 'Gal 3'), createWord('Evangelio', 'Rom 1:16')] },
+  reformadores: { id: 'reformadores', name: 'Reformadores', level: 'hard', words: [
+    createWord('Lutero', 'Alemania', 'Teólogo alemán que inició la Reforma Protestante con sus 95 tesis.'),
+    createWord('Calvino', 'Ginebra', 'Teólogo francés, autor de "La Institución de la Religión Cristiana".'),
+    createWord('Spurgeon', 'Londres', 'Conocido como el "Príncipe de los Predicadores" bautista.'),
+    createWord('Wesley', 'Inglaterra', 'Clérigo anglicano y teólogo, fundador del Metodismo.'),
+    createWord('Knox', 'Escocia', 'Líder de la Reforma Protestante en Escocia y fundador del presbiterianismo.'),
+    createWord('Zuinglio', 'Suiza', 'Líder de la Reforma Protestante en Suiza.'),
+    createWord('Wycliffe', 'Inglaterra', 'Teólogo inglés, conocido como la "Estrella Matutina de la Reforma".'),
+    createWord('Tyndale', 'Inglaterra', 'Traductor de la Biblia al inglés, ejecutado por su fe.'),
+    createWord('Jan Hus', 'Bohemia', 'Precursor de la Reforma, quemado en la hoguera.'),
+    createWord('Jonathan Edwards', 'USA', 'Teólogo del Primer Gran Despertar, "Pecadores en manos de un Dios airado".'),
+    createWord('Whitefield', 'Inglaterra', 'Predicador evangelista del Gran Despertar.'),
+    createWord('Moody', 'Chicago', 'Evangelista y editor estadounidense, fundador de la Iglesia Moody.'),
+    createWord('Bonhoeffer', 'Alemania', 'Teólogo luterano y mártir antinazi, "El Costo del Discipulado".'),
+    createWord('C.S. Lewis', 'Inglaterra', 'Apologista cristiano, autor de "Mero Cristianismo" y Narnia.'),
+    createWord('Billy Graham', 'USA', 'Evangelista estadounidense que predicó a millones en estadios.')
+  ]},
+  villanos: { id: 'villanos', name: 'Villanos', level: 'hard', words: [createWord('Goliat', '1 Samuel 17', 'Gigante filisteo derrotado por David.'), createWord('Judas Iscariote', 'Mateo 26', 'Discípulo que traicionó a Jesús por 30 monedas.'), createWord('Poncio Pilatos', 'Mateo 27', 'Gobernador que condenó a Jesús y se lavó las manos.'), createWord('Jezabel', '1 Reyes 21', 'Reina malvada que persiguió a Elías.'), createWord('Caín', 'Génesis 4', 'Primer hijo de Adán y Eva, mató a su hermano Abel.'), createWord('Satanás', 'Job 1', 'El adversario, tentador y padre de mentira.'), createWord('Caifás', 'Mateo 26', 'Sumo Sacerdote que conspiró para matar a Jesús.'), createWord('Amán', 'Ester 3', 'Funcionario persa que planeó exterminar a los judíos.'), createWord('Herodes el Grande', 'Mateo 2', 'Rey que ordenó la matanza de los inocentes en Belén.'), createWord('Dalila', 'Jueces 16', 'Mujer que traicionó a Sansón cortándole el cabello.'), createWord('Absalón', '2 Samuel 15', 'Hijo de David que se rebeló contra su padre.'), createWord('Balaam', 'Números 22', 'Profeta que intentó maldecir a Israel por dinero.'), createWord('Antíoco Epífanes', 'Daniel 11', 'Rey que profanó el templo (figura profética).'), createWord('Sanbalat', 'Nehemías 4', 'Gobernador que se opuso a la reconstrucción de Jerusalén.'), createWord('Faraón', 'Éxodo 5', 'Rey de Egipto que endureció su corazón contra Dios.'), createWord('La Bestia', 'Apocalipsis 13', 'Figura del fin de los tiempos opuesta a Dios.')] }
 };
 
 // --- ICONOS ---
 const AppIcon = () => (
     <div className="w-10 h-10 rounded-lg bg-amber-500 flex items-center justify-center shadow-md overflow-hidden">
         <svg viewBox="0 0 100 100" className="w-8 h-8 scale-150 translate-y-1">
-             <path d="M20 90 L 20 20 L 80 20 L 80 90 Z" className="fill-slate-900" /> {/* Tunic */}
-             <path d="M20 20 L 20 10 Q 50 -5 80 10 L 80 20" className="fill-slate-800" /> {/* Hat */}
-             <path d="M30 25 L 30 55 Q 50 70 70 55 L 70 25 Z" className="fill-amber-100" /> {/* Face */}
+             <path d="M20 90 L 20 20 L 80 20 L 80 90 Z" className="fill-slate-900" /> 
+             <path d="M20 20 L 20 10 Q 50 -5 80 10 L 80 20" className="fill-slate-800" /> 
+             <path d="M30 25 L 30 55 Q 50 70 70 55 L 70 25 Z" className="fill-amber-100" /> 
              <path d="M35 35 L 45 37" className="stroke-slate-900 stroke-[3px]" />
              <path d="M55 37 L 65 35" className="stroke-slate-900 stroke-[3px]" />
              <circle cx="40" cy="40" r="2.5" className="fill-slate-900" />
              <circle cx="60" cy="40" r="2.5" className="fill-slate-900" />
              <path d="M40 50 Q 50 53 60 50" className="stroke-slate-900 stroke-[2px] fill-none" />
-             <path d="M30 50 Q 50 80 70 50 L 70 45 L 30 45 Z" className="fill-slate-800" /> {/* Beard */}
+             <path d="M30 50 Q 50 80 70 50 L 70 45 L 30 45 Z" className="fill-slate-800" /> 
         </svg>
     </div>
 );
 
-const PriestIcon = () => (
-  <svg viewBox="0 0 100 100" className="w-24 h-24 mx-auto drop-shadow-lg" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M20 90 L 20 40 Q 50 10 80 40 L 80 90 Z" className="fill-slate-800 stroke-slate-600" />
-    <path d="M50 20 L 50 90" className="stroke-slate-700" />
-    <circle cx="50" cy="45" r="15" className="fill-amber-100 stroke-amber-200" />
-    <path d="M40 55 Q 50 65 60 55" className="stroke-slate-800" />
-  </svg>
-);
-
-const PhariseeMascot = ({ onClick, speech, scale = 1 }) => (
+const PhariseeMascot = ({ onClick, speech, scale = 1, showBody = true }) => (
   <div className={`relative w-40 h-40 mx-auto cursor-pointer group ${scale === 1 ? 'mt-16 mb-4 z-0' : 'z-0'}`} style={{ transform: `scale(${scale})` }} onClick={onClick}>
      {speech && (
          <div className="absolute -top-20 left-1/2 -translate-x-1/2 bg-white text-slate-900 text-xs font-bold p-3 rounded-xl shadow-xl w-52 text-center animate-in fade-in zoom-in border-2 border-slate-800 z-0">
@@ -304,8 +447,8 @@ const PhariseeMascot = ({ onClick, speech, scale = 1 }) => (
         {/* Barba */}
         <path d="M30 65 Q 50 95 70 65 L 70 60 L 30 60 Z" className="fill-slate-800" />
         
-        {/* Boca (Juzgando) */}
-        <path d="M45 75 Q 50 72 55 75" className="stroke-slate-950 stroke-[2px] fill-none" />
+        {/* Boca (Blanca y con contraste/sombra) */}
+        <path d="M45 75 Q 50 72 55 75" className="stroke-white stroke-[3px] fill-none drop-shadow-md" />
      </svg>
   </div>
 );
@@ -377,6 +520,18 @@ const Toast = ({ message, onClose }) => (
     </div>
 );
 
+const HighlightedText = ({ text, term }) => {
+  if (!text || !term) return <span>{text}</span>;
+  const parts = text.split(new RegExp(`(${term})`, 'gi'));
+  return (
+    <span>
+      {parts.map((part, i) => 
+        part.toLowerCase() === term.toLowerCase() ? <span key={i} className="font-bold text-indigo-700 bg-indigo-100 px-1 rounded">{part}</span> : part
+      )}
+    </span>
+  );
+};
+
 // --- APP PRINCIPAL ---
 
 export default function App() {
@@ -397,6 +552,7 @@ export default function App() {
   const [gameFlow, setGameFlow] = useState('sanedrin'); 
   const [showCategoryToImpostor, setShowCategoryToImpostor] = useState(true);
   const [aiHintEnabled, setAiHintEnabled] = useState(false);
+  const [aiContextEnabled, setAiContextEnabled] = useState(false); 
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [musicEnabled, setMusicEnabled] = useState(true); 
@@ -407,8 +563,10 @@ export default function App() {
   // UI States
   const [customTopic, setCustomTopic] = useState('');
   const [customWordInput, setCustomWordInput] = useState('');
+  const [customRefInput, setCustomRefInput] = useState(''); 
   const [isGeneratingCat, setIsGeneratingCat] = useState(false);
   const [generatedAiHint, setGeneratedAiHint] = useState('');
+  const [generatedAiContext, setGeneratedAiContext] = useState(''); 
   const [isGeneratingHint, setIsGeneratingHint] = useState(false);
   const [showCustomWordsModal, setShowCustomWordsModal] = useState(false);
   const [vigiliaRollIndex, setVigiliaRollIndex] = useState(0);
@@ -418,6 +576,9 @@ export default function App() {
   const [showResultModal, setShowResultModal] = useState(null); 
   const [showResetStatsConfirm, setShowResetStatsConfirm] = useState(false);
   const [showBackupModal, setShowBackupModal] = useState(false);
+  const [selectedVotes, setSelectedVotes] = useState([]); 
+  const [showVerseModal, setShowVerseModal] = useState(null);
+  const [showContextModal, setShowContextModal] = useState(false);
   
   // States for Category Editing
   const [previewCatId, setPreviewCatId] = useState(null);
@@ -473,7 +634,7 @@ export default function App() {
       triggerSound('click');
       let newSelection = [];
       if (level === 'easy') newSelection = ['libros', 'oficios', 'animales', 'objetos', 'vida_jesus'];
-      else if (level === 'medium') newSelection = ['libros', 'oficios', 'animales', 'objetos', 'vida_jesus', 'profetas', 'milagros', 'mujeres', 'lugares', 'reyes', 'bandas', 'random'];
+      else if (level === 'medium') newSelection = ['libros', 'oficios', 'animales', 'objetos', 'vida_jesus', 'profetas', 'milagros', 'lugares', 'random'];
       else newSelection = Object.keys(categories);
       setSelectedCats(newSelection);
   };
@@ -481,16 +642,18 @@ export default function App() {
   const handleAddCustomWord = () => {
       if (!customWordInput.trim()) return;
       const word = customWordInput.trim();
+      const ref = customRefInput.trim() || 'Agregada';
       setCategories(prev => ({
           ...prev,
           custom_added: {
               id: 'custom_added',
               name: 'Palabras Agregadas',
-              words: [...(prev.custom_added?.words || []), { term: word, ref: 'Agregada', active: true }]
+              words: [...(prev.custom_added?.words || []), { term: word, ref: ref, active: true }]
           }
       }));
       if (!selectedCats.includes('custom_added')) setSelectedCats(prev => [...prev, 'custom_added']);
       setCustomWordInput('');
+      setCustomRefInput('');
       triggerSound('click');
   };
 
@@ -510,7 +673,7 @@ export default function App() {
     if (!customTopic.trim()) return;
     setIsGeneratingCat(true);
     triggerSound('magic');
-    const prompt = `Genera una lista de 25 palabras o conceptos bíblicos relacionados con el tema: "${customTopic}". Devuelve SOLO un array JSON válido sin markdown. Formato: [{ "term": "Palabra", "ref": "Cita Bíblica" }]. Lenguaje: Español.`;
+    const prompt = `Genera una lista de 25 palabras o conceptos bíblicos relacionados con el tema: "${customTopic}". Devuelve SOLO un array JSON válido sin markdown. Formato: [{ "term": "Palabra", "ref": "Cita Bíblica Corta (ej Juan 3:16)" }]. Lenguaje: Español.`;
     const result = await callGemini(prompt, true);
     if (result && Array.isArray(result)) {
         const newId = `custom_${Date.now()}`;
@@ -555,6 +718,15 @@ export default function App() {
       setEditingCatTitle(false);
   };
 
+  const showVerseContent = (word) => {
+      triggerSound('click');
+      setShowVerseModal({ 
+          title: word.ref, 
+          content: word.content || "Información no disponible.", 
+          term: word.term 
+      });
+  };
+
   // --- JUGADORES & PREFS ---
   const handlePlayerCountChange = (delta) => {
     triggerSound('click');
@@ -575,17 +747,16 @@ export default function App() {
           partyStats, 
           vigiliaModeEnabled,
           vigiliaRounds,
-          settings: { impostorCount, timerDuration, timerEnabled, gameFlow, showCategoryToImpostor, aiHintEnabled, vibrationEnabled }
+          settings: { impostorCount, timerDuration, timerEnabled, gameFlow, showCategoryToImpostor, aiHintEnabled, vibrationEnabled, aiContextEnabled }
       };
       const text = JSON.stringify(data);
       setBackupText(text);
-      setShowBackupModal(true); // Mostrar el modal
+      setShowBackupModal(true); 
       
       try {
           await copyToClipboard(text);
           playSound('success');
       } catch (err) {
-          // Si falla, el modal igual muestra el texto para copiar manual
           playSound('error');
       }
   };
@@ -607,8 +778,14 @@ export default function App() {
               setShowCategoryToImpostor(data.settings.showCategoryToImpostor);
               setAiHintEnabled(data.settings.aiHintEnabled);
               setVibrationEnabled(data.settings.vibrationEnabled);
+              setAiContextEnabled(data.settings.aiContextEnabled);
           }
           playSound('success');
+          // Refresh total
+          setGameState('setup');
+          setGameData(null);
+          setCurrentRevealIndex(0);
+          setIsRevealing(false);
           setShowResultModal({ type: 'success', title: '¡Éxito!', msg: '¡Tus datos están cargados!' });
       } catch (e) { 
           playSound('error');
@@ -628,6 +805,8 @@ export default function App() {
     setCurrentRevealIndex(0);
     setIsRevealing(false);
     setGeneratedAiHint('');
+    setGeneratedAiContext('');
+    setSelectedVotes([]);
     // No borramos stats aqui, solo en clearStats
     if (!vigiliaModeEnabled) setPartyStats({});
   };
@@ -687,6 +866,8 @@ export default function App() {
     const mainWord = wordList[Math.floor(Math.random() * wordList.length)];
 
     setGeneratedAiHint('');
+    setGeneratedAiContext('');
+    
     if (aiHintEnabled) {
         setIsGeneratingHint(true);
         const prompt = `Genera una pista CORTA (max 10 palabras), ambigua y sutil sobre el término bíblico "${mainWord.term}" (Categoría: ${category.name}) para ayudar a un impostor.`;
@@ -694,6 +875,13 @@ export default function App() {
             setGeneratedAiHint(text || "Sin inspiración divina...");
             setIsGeneratingHint(false);
         });
+    }
+
+    if (aiContextEnabled) {
+         const prompt = `Explica BREVEMENTE (max 20 palabras) qué o quién es "${mainWord.term}" en la Biblia (${category.name}). Para alguien que no lo conoce.`;
+         callGemini(prompt, false).then(text => {
+            setGeneratedAiContext(text || "Misterio sin resolver...");
+         });
     }
 
     let roles = Array(currentPlayers.length).fill('faithful');
@@ -730,15 +918,11 @@ export default function App() {
         };
     });
 
-    const activePlayers = gamePlayers.filter(p => p.role !== 'impostor');
-    const pool = activePlayers.length > 0 ? activePlayers : gamePlayers;
-    const starterName = pool[Math.floor(Math.random() * pool.length)].name;
-
     setGameData({
       players: gamePlayers,
       originalPlayers: currentPlayers,
       categoryName: category.name,
-      starterName,
+      starterName: gamePlayers.filter(p => p.role !== 'impostor')[Math.floor(Math.random() * (currentPlayers.length - targetImpostors))].name,
       round: 1,
       modeId: activeModeId,
       impostorsIndices: Array.from(impostorsIndices), 
@@ -747,11 +931,13 @@ export default function App() {
 
     setCurrentRevealIndex(0);
     setIsRevealing(false);
+    setSelectedVotes([]);
     setGameState('reveal');
   };
 
   const nextReveal = () => {
     setIsRevealing(false);
+    setShowContextModal(false);
     if (currentRevealIndex + 1 >= players.length) setGameState('pre-game');
     else setCurrentRevealIndex(prev => prev + 1);
   };
@@ -774,6 +960,44 @@ export default function App() {
           });
           return newStats;
       });
+  };
+
+  // --- VOTING LOGIC ---
+  const toggleVote = (playerId) => {
+      setSelectedVotes(prev => {
+          if (prev.includes(playerId)) return prev.filter(id => id !== playerId);
+          
+          if (gameFlow === 'sanedrin' && impostorCount > 1) {
+              if (prev.length < impostorCount) return [...prev, playerId];
+              return prev; 
+          }
+          return [playerId]; 
+      });
+      triggerSound('click');
+  };
+
+  const confirmVote = () => {
+      if (selectedVotes.length === 0) return;
+
+      if (gameFlow === 'sanedrin' && impostorCount > 1) {
+          const allImpostors = selectedVotes.every(id => {
+              const p = gameData.players.find(pl => pl.id === id);
+              return p.role === 'impostor';
+          });
+          
+          if (allImpostors && selectedVotes.length === impostorCount) { 
+               updatePartyStats('faithful');
+               triggerSound('win-faithful');
+               setGameState('result-faithful');
+          } else {
+               updatePartyStats('impostor');
+               triggerSound('win-impostor');
+               setGameState('result-impostor');
+          }
+      } else {
+          ejectPlayer(selectedVotes[0]);
+      }
+      setSelectedVotes([]);
   };
 
   const ejectPlayer = (playerId) => {
@@ -806,6 +1030,7 @@ export default function App() {
 
     if (gameFlow === 'armageddon') setGameState('round-result');
     else {
+        // Sanedrin Single Fail
         if (player.role === 'impostor') {
             updatePartyStats('faithful');
             triggerSound('win-faithful');
@@ -902,12 +1127,22 @@ export default function App() {
             </div>
         </Modal>
 
-        {/* Backup Modal - Shows code + Copy */}
-        <Modal isOpen={showBackupModal} onClose={() => setShowBackupModal(false)} title="Guardar Progreso" triggerSound={triggerSound} zIndex="z-[100]">
+        {/* Verse Popup */}
+        <Modal isOpen={!!showVerseModal} onClose={() => setShowVerseModal(null)} title={showVerseModal?.title} triggerSound={triggerSound} zIndex="z-[100]">
+            <div className="text-center p-2">
+                <div className="text-slate-700 text-sm italic font-serif leading-relaxed mb-4">
+                   <HighlightedText text={showVerseModal?.content} term={showVerseModal?.term} />
+                </div>
+                <Button onClick={() => setShowVerseModal(null)} variant="primary">Cerrar</Button>
+            </div>
+        </Modal>
+
+        {/* Backup Modal */}
+        <Modal isOpen={showBackupModal} onClose={() => setShowBackupModal(false)} title="Guardar" triggerSound={triggerSound} zIndex="z-[100]">
             <div className="space-y-4">
                <div className="flex items-center gap-3 bg-indigo-50 p-3 rounded-lg border border-indigo-200">
                     <ClipboardCopy className="text-indigo-500" size={24} />
-                    <p className="text-sm text-slate-700">El código de backup ha sido generado. Cópialo y guárdalo en tus notas para no perder tu progreso.</p>
+                    <p className="text-sm text-slate-700">El código de guardado ha sido generado. Cópialo y guárdalo en tus notas para no perder tus datos.</p>
                 </div>
                 <textarea 
                     className="w-full h-32 bg-slate-100 text-slate-900 text-xs p-2 rounded border border-slate-300 font-mono"
@@ -949,9 +1184,13 @@ export default function App() {
                    <div className="max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
                        {categories[previewCatId].words.map((w, i) => (
                            <div key={i} className="flex justify-between items-center py-2 border-b border-slate-100">
-                               <div className={w.active === false ? 'opacity-40 line-through decoration-slate-400' : ''}>
+                               <div className={`flex-1 ${w.active === false ? 'opacity-40 line-through decoration-slate-400' : ''}`}>
                                    <span className="font-bold text-slate-700 block text-sm">{w.term}</span>
-                                   <span className="text-xs text-slate-400">{w.ref}</span>
+                                   {w.ref && (
+                                       <button onClick={() => showVerseContent(w)} className="text-xs text-indigo-500 hover:underline text-left">
+                                           {w.ref}
+                                       </button>
+                                   )}
                                </div>
                                <button onClick={() => toggleWordActive(previewCatId, w.term)} className="text-indigo-600">
                                    {w.active !== false ? <CheckSquare size={18}/> : <Square size={18}/>}
@@ -968,7 +1207,10 @@ export default function App() {
                 {categories.custom_added && categories.custom_added.words.length > 0 ? (
                     categories.custom_added.words.map((w, i) => (
                         <div key={i} className="flex justify-between items-center bg-slate-50 p-2 rounded">
-                            <span className="text-slate-800 font-bold">{w.term}</span>
+                            <div className="flex flex-col">
+                                <span className="text-slate-800 font-bold">{w.term}</span>
+                                <span className="text-xs text-slate-500">{w.ref}</span>
+                            </div>
                             <button onClick={() => handleDeleteCustomWord(w.term)} className="text-red-500"><Trash2 size={16}/></button>
                         </div>
                     ))
@@ -982,7 +1224,7 @@ export default function App() {
         <Modal isOpen={showInfo} onClose={() => setShowInfo(false)} title="Información" triggerSound={triggerSound}>
            <div className="flex space-x-2 border-b border-slate-200 mb-4 pb-1 overflow-x-auto">
                <button onClick={() => setInfoTab('instructions')} className={`px-3 py-2 font-bold text-sm ${infoTab === 'instructions' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}>Instrucciones</button>
-               <button onClick={() => setInfoTab('backup')} className={`px-3 py-2 font-bold text-sm ${infoTab === 'backup' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}>Backup</button>
+               <button onClick={() => setInfoTab('backup')} className={`px-3 py-2 font-bold text-sm ${infoTab === 'backup' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}>Cargar</button>
                <button onClick={() => setInfoTab('credits')} className={`px-3 py-2 font-bold text-sm ${infoTab === 'credits' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}>Créditos</button>
            </div>
            
@@ -991,11 +1233,27 @@ export default function App() {
                   <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex flex-col items-center">
                     <CurlyHairIcon />
                     <p className="font-bold text-xl text-indigo-700">Nicolás Francisco</p>
-                    <a href="https://instagram.com/comunicador.cristiano" target="_blank" rel="noreferrer" className="text-sm text-indigo-500 hover:underline flex items-center justify-center gap-1 mb-2">
-                        <ExternalLink size={14} /> @comunicador.cristiano
-                    </a>
+                    <div className="flex items-center gap-2 mb-2">
+                        <a href="https://instagram.com/comunicador.cristiano" target="_blank" rel="noreferrer" className="text-sm text-indigo-500 hover:underline flex items-center justify-center gap-1">
+                            @comunicador.cristiano
+                        </a>
+                        <Instagram size={16} className="text-indigo-500"/>
+                    </div>
                     <p className="font-bold text-slate-700 text-sm">CCO Peniel</p>
                   </div>
+                  
+                  <div className="my-2">
+                      <p className="text-xs text-slate-500 mb-2">La donación será destinada al Grupo de Pre, Ados y Jovs de la iglesia y el trabajo ministerial. Cualquier comentario, no duden en contactarme.</p>
+                      <a href='https://matecito.co/comunicadorcristiano' rel='noopener noreferrer' target='_blank'>
+                          <img 
+                              srcSet='https://cdn.matecito.co/assets/images/button_11.png 1x, https://cdn.matecito.co/assets/images/button_11_2x.png 2x, https://cdn.matecito.co/assets/images/button_11_3.75x.png 3.75x' 
+                              src='https://cdn.matecito.co/assets/images/button_11.png' 
+                              alt='Convidame un Matecito' 
+                              className="mx-auto h-10 hover:scale-105 transition-transform"
+                          />
+                      </a>
+                  </div>
+
                   <p className="text-slate-500 text-sm italic border-l-4 border-amber-400 pl-3 text-left bg-slate-50 p-2 rounded">
                     "Y todo lo que hagáis, hacedlo de corazón, como para el Señor y no para los hombres." - Colosenses 3:23
                   </p>
@@ -1005,7 +1263,7 @@ export default function App() {
                </div>
            ) : infoTab === 'backup' ? (
                <div className="space-y-4">
-                   <p className="text-xs text-slate-500">Pega aquí tu código de respaldo para cargar el progreso.</p>
+                   <p className="text-xs text-slate-500">Pega aquí tu código de guardado para cargar el progreso.</p>
                    <textarea 
                         className="w-full h-32 bg-slate-100 text-slate-900 text-xs p-2 rounded border border-slate-300 font-mono"
                         value={backupText}
@@ -1013,7 +1271,7 @@ export default function App() {
                         placeholder="Pegar código aquí..."
                    />
                    <div className="flex gap-2">
-                       <button onClick={importData} className="flex-1 bg-green-600 text-white py-2 rounded text-xs font-bold flex items-center justify-center gap-2"><Upload size={14}/> Cargar Backup</button>
+                       <button onClick={importData} className="flex-1 bg-green-600 text-white py-2 rounded text-xs font-bold flex items-center justify-center gap-2"><Upload size={14}/> Cargar</button>
                    </div>
                </div>
            ) : (
@@ -1037,7 +1295,11 @@ export default function App() {
                            <strong className="text-amber-700">Vigilia</strong>
                            <p className="text-xs">Modo aleatorio que rota entre mecánicas cada ronda y lleva un registro de puntajes.</p>
                        </div>
-                       <p className="text-[10px] text-slate-400 italic mt-2">PD: Podés guardar tu progreso en la pestaña Backup.</p>
+                       
+                       <div className="bg-slate-100 p-2 rounded mt-2 border border-slate-200">
+                           <strong className="text-indigo-600 block text-xs mb-1">Guardar configuración</strong>
+                           <p className="text-[10px] text-slate-500">Puedes guardar tus categorías, jugadores y puntajes usando el botón de Guardar (disco) en el menú principal.</p>
+                       </div>
 
                        <h4 className="font-bold text-slate-900 border-b border-slate-200 pb-1 mt-4">Roles Especiales</h4>
                        <div>
@@ -1045,7 +1307,7 @@ export default function App() {
                            <p className="text-xs">Sabe quiénes son los fariseos, pero NO puede revelarlo ni votarlos directamente. Debe guiar.</p>
                        </div>
                        <div>
-                           <strong className="text-indigo-600">Modo Zacarías</strong>
+                           <strong className="text-indigo-600">Zacarías</strong>
                            <p className="text-xs">Un jugador queda mudo. Solo mímica.</p>
                        </div>
                        <div>
@@ -1205,6 +1467,14 @@ export default function App() {
                             <div className={`absolute w-3 h-3 bg-white rounded-full top-1 transition-all ${aiHintEnabled ? 'left-6' : 'left-1'}`} />
                         </button>
                      </div>
+                     
+                     <div className="flex items-center justify-between">
+                        <label className="text-xs text-slate-600 font-medium flex items-center gap-1">Pista IA para el Fiel <Sparkles size={12} className="text-amber-500"/></label>
+                        <button onClick={() => setAiContextEnabled(!aiContextEnabled)} className={`w-10 h-5 rounded-full relative transition ${aiContextEnabled ? 'bg-indigo-500' : 'bg-slate-300'}`}>
+                            <div className={`absolute w-3 h-3 bg-white rounded-full top-1 transition-all ${aiContextEnabled ? 'left-6' : 'left-1'}`} />
+                        </button>
+                     </div>
+
                      <div className="flex items-center justify-between">
                         <label className={`text-xs font-medium ${timerEnabled ? 'text-slate-600' : 'text-slate-300'}`}>Vibrar y sonar al terminar la ronda</label>
                         <button disabled={!timerEnabled} onClick={() => setVibrationEnabled(!vibrationEnabled)} className={`p-1 rounded ${vibrationEnabled && timerEnabled ? 'text-indigo-600 bg-indigo-50' : 'text-slate-300 bg-slate-100'}`}>
@@ -1236,7 +1506,7 @@ export default function App() {
                         type="text" 
                         value={customTopic}
                         onChange={(e) => setCustomTopic(e.target.value)}
-                        placeholder="Generar tema con IA..."
+                        placeholder="Generar tema bíblico con IA..."
                         className="flex-1 text-xs bg-transparent focus:outline-none text-indigo-900"
                       />
                       <button onClick={handleGenerateCategory} disabled={isGeneratingCat || !customTopic} className="text-indigo-600 p-1">
@@ -1245,13 +1515,22 @@ export default function App() {
                   </div>
                   <div className="bg-slate-100 p-2 rounded-lg border border-slate-200 flex gap-2 items-center"> {/* Removed relative */}
                       <PlusCircle size={14} className="text-slate-500 ml-1"/>
-                      <input 
-                        type="text" 
-                        value={customWordInput}
-                        onChange={(e) => setCustomWordInput(e.target.value)}
-                        placeholder="Agregar palabra suelta..."
-                        className="flex-1 text-xs bg-transparent focus:outline-none text-slate-800"
-                      />
+                      <div className="flex-1 flex gap-2">
+                         <input 
+                            type="text" 
+                            value={customWordInput}
+                            onChange={(e) => setCustomWordInput(e.target.value)}
+                            placeholder="Palabra..."
+                            className="w-1/2 text-xs bg-transparent focus:outline-none text-slate-800"
+                         />
+                         <input 
+                            type="text" 
+                            value={customRefInput}
+                            onChange={(e) => setCustomRefInput(e.target.value)}
+                            placeholder="Ref (opcional)..."
+                            className="w-1/2 text-xs bg-transparent focus:outline-none text-slate-500 border-l border-slate-300 pl-2"
+                         />
+                      </div>
                       <button onClick={handleAddCustomWord} disabled={!customWordInput} className="text-slate-600 p-1 hover:text-green-600">
                           <ChevronRight size={16}/>
                       </button>
@@ -1385,6 +1664,28 @@ export default function App() {
                           </span>
                           {gameData.players[currentRevealIndex].wordObj.ref && <span className="text-xs text-amber-700 mt-1 block italic">{gameData.players[currentRevealIndex].wordObj.ref}</span>}
                         </div>
+
+                        {/* Faithful Context Hint */}
+                        {aiContextEnabled && gameData.players[currentRevealIndex].role === 'faithful' && gameData.players[currentRevealIndex].specialRole !== 'etiope' && (
+                             <div className="mt-2 w-full">
+                                {showContextModal ? (
+                                    <div className="bg-indigo-50 border border-indigo-200 p-2 rounded text-xs text-indigo-800 animate-in fade-in">
+                                        <div className="flex justify-between items-start">
+                                            <span className="font-bold flex items-center gap-1"><Sparkles size={10}/> Contexto:</span>
+                                            <button onClick={(e) => { e.stopPropagation(); setShowContextModal(false); }}><X size={14}/></button>
+                                        </div>
+                                        <p className="mt-1 italic">{generatedAiContext || "Cargando sabiduría..."}</p>
+                                    </div>
+                                ) : (
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); setShowContextModal(true); }}
+                                        className="text-[10px] text-indigo-500 underline flex items-center justify-center gap-1 w-full"
+                                    >
+                                        ¿Qué es esto? <HelpCircle size={10}/>
+                                    </button>
+                                )}
+                             </div>
+                        )}
                         
                         {gameData.players[currentRevealIndex].specialRole === 'judas' && (
                             <div className="bg-red-50 border border-red-200 p-2 rounded mt-2">
@@ -1399,7 +1700,7 @@ export default function App() {
                             </div>
                         )}
 
-                        <div className="bg-slate-100 px-2 py-1 rounded w-full">
+                        <div className="bg-slate-100 px-2 py-1 rounded w-full mt-2">
                             <span className="text-slate-400 text-[10px] font-bold uppercase">Categoría: {gameData.categoryName}</span>
                         </div>
                       </>
@@ -1519,25 +1820,55 @@ export default function App() {
         {gameState === 'vote' && (
              <div className="animate-in slide-in-from-bottom duration-300 pt-4">
                  <h2 className="text-center text-2xl font-bold text-white mb-2">¿Quién es el Fariseo?</h2>
-                 <p className="text-center text-slate-400 text-sm mb-6">Tocá al sospechoso para expulsarlo.</p>
+                 <p className="text-center text-slate-400 text-sm mb-6">
+                     {gameData.modeId === 'normal' && impostorCount > 1 ? "Seleccioná a los sospechosos y confirma." : "Tocá al sospechoso para expulsarlo."}
+                 </p>
                  
-                 <div className="grid gap-3 max-h-[60vh] overflow-y-auto">
-                     {gameData.players.map(p => (
-                         !p.isDead && (
+                 <div className="grid gap-3 max-h-[60vh] overflow-y-auto pb-20">
+                     {gameData.players.map(p => {
+                         if (p.isDead) return null;
+                         const isSelected = selectedVotes.includes(p.id);
+                         return (
                              <button 
                                 key={p.id}
-                                onClick={() => ejectPlayer(p.id)}
-                                className="bg-slate-800 hover:bg-slate-700 border border-slate-600 p-4 rounded-xl flex items-center justify-between group transition-all"
+                                onClick={() => {
+                                    if (gameFlow === 'sanedrin' && impostorCount > 1) {
+                                        toggleVote(p.id);
+                                    } else {
+                                        ejectPlayer(p.id);
+                                    }
+                                }}
+                                className={`
+                                    border p-4 rounded-xl flex items-center justify-between group transition-all
+                                    ${isSelected 
+                                        ? 'bg-red-900/40 border-red-500 ring-2 ring-red-500' 
+                                        : 'bg-slate-800 border-slate-600 hover:bg-slate-700'}
+                                `}
                              >
                                  <span className="font-bold text-lg">{p.name}</span>
-                                 <div className="bg-red-500/10 p-2 rounded-full group-hover:bg-red-500 group-hover:text-white transition-colors text-red-500">
-                                     <Gavel size={20} />
+                                 <div className={`p-2 rounded-full transition-colors ${isSelected ? 'bg-red-500 text-white' : 'bg-slate-700 text-slate-400'}`}>
+                                     {isSelected ? <CheckCircle size={20}/> : <Gavel size={20}/>}
                                  </div>
                              </button>
                          )
-                     ))}
+                     })}
                  </div>
-                 <div className="mt-6">
+
+                 {/* Confirm Button for Multi-Select */}
+                 {gameFlow === 'sanedrin' && impostorCount > 1 && (
+                     <div className="fixed bottom-6 left-6 right-6">
+                         <Button 
+                            onClick={confirmVote} 
+                            disabled={selectedVotes.length !== impostorCount}
+                            variant={selectedVotes.length === impostorCount ? 'danger' : 'outline'}
+                            className="shadow-xl"
+                         >
+                            Confirmar Votos ({selectedVotes.length}/{impostorCount})
+                         </Button>
+                     </div>
+                 )}
+
+                 <div className="mt-6 mb-20">
                     <Button onClick={() => setGameState('playing')} variant="outline" className="bg-transparent border-slate-600 text-slate-400">
                         Cancelar, seguir debatiendo
                     </Button>
@@ -1552,7 +1883,9 @@ export default function App() {
                     {gameData.lastEjected.role === 'faithful' ? (
                         <div className="text-green-500 bg-green-500/10 p-4 rounded-full inline-block mb-4"><UserMinus size={48}/></div>
                     ) : (
-                        <div className="text-red-500 bg-red-500/10 p-4 rounded-full inline-block mb-4"><PriestIcon /></div>
+                        <div className="text-red-500 bg-red-500/10 p-4 rounded-full inline-block mb-4">
+                             <PhariseeMascot scale={0.5} />
+                        </div>
                     )}
                     <h2 className="text-3xl font-bold text-white mb-2">{gameData.lastEjected.name}</h2>
                     <p className="text-xl text-slate-300">
