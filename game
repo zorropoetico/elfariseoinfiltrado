@@ -1,0 +1,1674 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { 
+  Users, UserMinus, Play, Eye, EyeOff, 
+  Settings, BookOpen, Info, Volume2, VolumeX,
+  HelpCircle, ChevronRight, Gavel, X, Clock, ExternalLink,
+  Crown, MicOff, Edit3, ScrollText, Sword, ChevronLeft, Music,
+  Sparkles, Trophy, AlertTriangle, Flame, PlusCircle, Trash2, Save, Upload, RefreshCw, LogOut, Loader2, CheckSquare, Square, PenLine, ClipboardCopy, CheckCircle, XCircle, Copy
+} from 'lucide-react';
+
+// --- CONFIGURACIÓN GEMINI API ---
+const apiKey = ""; 
+
+// Helper para llamar a Gemini
+const callGemini = async (prompt, isJson = false) => {
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: isJson ? "application/json" : "text/plain"
+          }
+        })
+      }
+    );
+
+    if (!response.ok) throw new Error('Error en API');
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    return isJson ? JSON.parse(text) : text;
+  } catch (error) {
+    console.error("Gemini Error:", error);
+    return null;
+  }
+};
+
+// --- AUDIO ENGINE ---
+let audioCtx = null;
+let bgMusic = null; 
+
+const initAudio = () => {
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    return audioCtx;
+};
+
+// Fallback robusto para portapapeles (Fix NotAllowedError)
+const copyToClipboard = async (text) => {
+  try {
+    // Intentar primero con la API moderna
+    await navigator.clipboard.writeText(text);
+  } catch (err) {
+    // Si falla (bloqueo de permisos/iframe), usar fallback legacy
+    try {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      
+      // Asegurar que no sea visible ni afecte el layout
+      textArea.style.position = "fixed";
+      textArea.style.left = "-9999px";
+      textArea.style.top = "0";
+      
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      
+      if (!successful) {
+         throw new Error("Fallback copy failed");
+      }
+    } catch (fallbackErr) {
+      console.error("Clipboard failed completely:", fallbackErr);
+      throw fallbackErr;
+    }
+  }
+};
+
+const playSound = (type) => {
+  try {
+    const ctx = initAudio();
+    if (ctx.state === 'suspended') ctx.resume();
+    
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    const now = ctx.currentTime;
+
+    if (type === 'click') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(400, now);
+      osc.frequency.exponentialRampToValueAtTime(100, now + 0.1);
+      gain.gain.setValueAtTime(0.1, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+      osc.start(now);
+      osc.stop(now + 0.1);
+    } else if (type === 'success') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(500, now);
+      osc.frequency.linearRampToValueAtTime(1000, now + 0.1);
+      gain.gain.setValueAtTime(0.1, now);
+      gain.gain.linearRampToValueAtTime(0, now + 0.3);
+      osc.start(now);
+      osc.stop(now + 0.3);
+    } else if (type === 'error') {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(150, now);
+      osc.frequency.linearRampToValueAtTime(100, now + 0.2);
+      gain.gain.setValueAtTime(0.1, now);
+      gain.gain.linearRampToValueAtTime(0, now + 0.3);
+      osc.start(now);
+      osc.stop(now + 0.3);
+    } else if (type === 'alarm') {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.setValueAtTime(440, now + 0.2); 
+      osc.frequency.setValueAtTime(880, now + 0.4);
+      gain.gain.setValueAtTime(0.1, now);
+      gain.gain.linearRampToValueAtTime(0, now + 1);
+      osc.start(now);
+      osc.stop(now + 1);
+    } else if (type === 'reveal') {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(100, now);
+      osc.frequency.linearRampToValueAtTime(200, now + 0.3);
+      gain.gain.setValueAtTime(0.05, now);
+      gain.gain.linearRampToValueAtTime(0, now + 0.3);
+      osc.start(now);
+      osc.stop(now + 0.3);
+    } else if (type === 'magic') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(600, now);
+      osc.frequency.linearRampToValueAtTime(1200, now + 0.3);
+      gain.gain.setValueAtTime(0.05, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+      osc.start(now);
+      osc.stop(now + 0.5);
+    } else if (type === 'win-faithful') {
+        [440, 554, 659].forEach((freq, i) => {
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.connect(g);
+            g.connect(ctx.destination);
+            o.type = 'triangle';
+            o.frequency.value = freq;
+            g.gain.setValueAtTime(0, now);
+            g.gain.linearRampToValueAtTime(0.1, now + 0.1 + (i*0.05));
+            g.gain.exponentialRampToValueAtTime(0.001, now + 2);
+            o.start(now);
+            o.stop(now + 2);
+        });
+    } else if (type === 'win-impostor') {
+        [110, 116, 164].forEach((freq, i) => {
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.connect(g);
+            g.connect(ctx.destination);
+            o.type = 'sawtooth';
+            o.frequency.value = freq;
+            g.gain.setValueAtTime(0, now);
+            g.gain.linearRampToValueAtTime(0.1, now + 0.1);
+            g.gain.exponentialRampToValueAtTime(0.001, now + 2.5);
+            o.start(now);
+            o.stop(now + 2.5);
+        });
+    }
+  } catch (e) {
+    console.error("Audio error", e);
+  }
+};
+
+const toggleMusic = (enable) => {
+    try {
+        const ctx = initAudio();
+        const now = ctx.currentTime;
+
+        if (enable) {
+            if (bgOscillators.length > 0) return; 
+            if (ctx.state === 'suspended') ctx.resume();
+            
+            bgGain = ctx.createGain();
+            bgGain.connect(ctx.destination);
+            bgGain.gain.setValueAtTime(0, now);
+            bgGain.gain.linearRampToValueAtTime(0.02, now + 2); 
+
+            [110, 164].forEach(freq => {
+                const osc = ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.value = freq;
+                osc.connect(bgGain);
+                osc.start(now);
+                bgOscillators.push(osc);
+            });
+        } else {
+            if (bgGain) {
+                bgGain.gain.cancelScheduledValues(now);
+                bgGain.gain.linearRampToValueAtTime(0, now + 1);
+                setTimeout(() => {
+                    bgOscillators.forEach(osc => { try { osc.stop(); } catch(e){} });
+                    bgOscillators = [];
+                }, 1000);
+            }
+        }
+    } catch (e) { console.error(e); }
+};
+
+// --- DATA: Modos de Juego (Mecánicas) ---
+const GAME_MODES = [
+  { id: 'normal', label: 'Clásico', sub: '(Estándar)', icon: <Users size={20}/>, desc: 'Ronda de preguntas y momento de debate.' },
+  { id: 'profeta', label: 'El Profeta', sub: '(Vidente)', icon: <Eye size={20}/>, desc: 'Un fiel conoce a los Fariseos, pero NO puede revelar su rol ni votarlos directamente.' },
+  { id: 'espadeo', label: 'Espadeo', sub: '(Citas)', icon: <Sword size={20}/>, desc: 'En lugar de decir una palabra, debés citar o parafrasear un versículo relacionado.' },
+  { id: 'escribas', label: 'Escribas', sub: '(Dibujo)', icon: <Edit3 size={20}/>, desc: 'Nadie habla. Dibujan una pista en papel y la pasan al siguiente.' },
+  { id: 'zacarias', label: 'Zacarías', sub: '(Mudo)', icon: <MicOff size={20}/>, desc: 'Un jugador al azar queda mudo. Solo puede hacer mímica. ¡Suerte si es Fariseo!' },
+  { id: 'sumo', label: 'Sumo Sacerdote', sub: '(Juez)', icon: <Crown size={20}/>, desc: 'Un jugador dirige el debate desde el centro como moderador.' },
+  { id: 'judas', label: 'El Judas', sub: '(Traidor)', icon: <ScrollText size={20}/>, desc: 'Un fiel sabe quién es el Fariseo. Si el Fariseo gana, Judas también gana.' },
+  { id: 'babel', label: 'Babel', sub: '(Caos)', icon: <HelpCircle size={20}/>, desc: 'Cada fiel recibe una palabra distinta (pero de la misma categoría).' },
+  { id: 'etiope', label: 'Etíope', sub: '(Confuso)', icon: <HelpCircle size={20}/>, desc: 'Un fiel no sabe la palabra, pero no es impostor. No puede revelar su rol.' }
+];
+
+// --- DATA: Categorías ---
+const createWord = (term, ref, active = true) => ({ term, ref, active });
+
+const BASE_CATEGORIES = {
+  libros: { id: 'libros', name: 'Libros Biblia', level: 'easy', words: [createWord('Génesis', 'AT'), createWord('Salmos', 'AT'), createWord('Mateo', 'NT'), createWord('Apocalipsis', 'NT'), createWord('Éxodo', 'AT'), createWord('Proverbios', 'AT'), createWord('Hechos', 'NT'), createWord('Romanos', 'NT'), createWord('Jonás', 'AT'), createWord('Daniel', 'AT')] },
+  oficios: { id: 'oficios', name: 'Oficios', level: 'easy', words: [createWord('Pastor', ''), createWord('Pescador', ''), createWord('Carpintero', ''), createWord('Rey', ''), createWord('Sacerdote', ''), createWord('Profeta', ''), createWord('Soldado', ''), createWord('Sembrador', '')] },
+  animales: { id: 'animales', name: 'Animales', level: 'easy', words: [createWord('Oveja', ''), createWord('León', ''), createWord('Serpiente', ''), createWord('Paloma', ''), createWord('Burro', ''), createWord('Pez', ''), createWord('Camello', ''), createWord('Lobo', '')] },
+  objetos: { id: 'objetos', name: 'Objetos', level: 'easy', words: [createWord('Arca', ''), createWord('Cruz', ''), createWord('Copa', ''), createWord('Túnica', ''), createWord('Corona', ''), createWord('Red', ''), createWord('Lámpara', ''), createWord('Piedra', '')] },
+  vida_jesus: { id: 'vida_jesus', name: 'Vida de Jesús', level: 'easy', words: [createWord('Jesús', 'Salvador'), createWord('Pesebre', 'Nacimiento'), createWord('Bautismo', 'Jordán'), createWord('Tentación', 'Desierto'), createWord('Transfiguración', 'Monte'), createWord('Última Cena', 'Jueves'), createWord('Crucifixión', 'Gólgota'), createWord('Resurrección', 'Domingo'), createWord('Ascensión', 'Nubes')] },
+  profetas: { id: 'profetas', name: 'Profetas', level: 'medium', words: [createWord('Moisés', ''), createWord('Elías', ''), createWord('Isaías', ''), createWord('Jeremías', ''), createWord('Jonás', ''), createWord('Daniel', ''), createWord('Samuel', ''), createWord('Juan Bautista', ''), createWord('David', ''), createWord('Noé', '')] },
+  milagros: { id: 'milagros', name: 'Milagros', level: 'medium', words: [createWord('Agua en vino', 'Caná'), createWord('Mar Rojo', 'Éxodo'), createWord('Lázaro', 'Resurrección'), createWord('Panes y Peces', 'Multiplicación'), createWord('Caminar sobre agua', ''), createWord('Ciego Bartimeo', ''), createWord('Paralítico', 'Techo')] },
+  mujeres: { id: 'mujeres', name: 'Mujeres', level: 'medium', words: [createWord('María', ''), createWord('Eva', ''), createWord('Sara', ''), createWord('Ester', ''), createWord('Rut', ''), createWord('Dalila', ''), createWord('Magdalena', ''), createWord('Marta', ''), createWord('Rahab', '')] },
+  lugares: { id: 'lugares', name: 'Lugares', level: 'medium', words: [createWord('Jerusalén', ''), createWord('Belén', ''), createWord('Nazaret', ''), createWord('Galilea', ''), createWord('Jordán', ''), createWord('Egipto', ''), createWord('Sinaí', ''), createWord('Jericó', ''), createWord('Getsemaní', '')] },
+  reyes: { id: 'reyes', name: 'Reyes', level: 'medium', words: [createWord('David', ''), createWord('Salomón', ''), createWord('Saúl', ''), createWord('Herodes', ''), createWord('Faraón', ''), createWord('Nabucodonosor', ''), createWord('Ezequías', '')] },
+  bandas: { id: 'bandas', name: 'Música Cristiana', level: 'medium', words: [createWord('Hillsong', ''), createWord('Redimi2', ''), createWord('Marcos Witt', ''), createWord('Jesús Adrián Romero', ''), createWord('Tercer Cielo', ''), createWord('Barak', ''), createWord('Miel San Marcos', ''), createWord('Christine D\'Clario', ''), createWord('Rescate', ''), createWord('Funky', '')] },
+  random: { id: 'random', name: 'Biblical Random', level: 'medium', words: [createWord('Fe', ''), createWord('Gracia', ''), createWord('Pecado', ''), createWord('Diezmo', ''), createWord('Ayuno', ''), createWord('Oración', ''), createWord('Bautismo', ''), createWord('Santa Cena', '')] },
+  reformadores: { id: 'reformadores', name: 'Reformadores', level: 'hard', words: [createWord('Lutero', ''), createWord('Calvino', ''), createWord('Spurgeon', ''), createWord('Wesley', ''), createWord('Knox', ''), createWord('Zuinglio', '')] },
+  villanos: { id: 'villanos', name: 'Villanos', level: 'hard', words: [createWord('Goliat', ''), createWord('Judas', ''), createWord('Pilatos', ''), createWord('Jezabel', ''), createWord('Caín', ''), createWord('Satanás', ''), createWord('Caifás', ''), createWord('Amán', '')] }
+};
+
+// --- ICONOS ---
+const AppIcon = () => (
+    <div className="w-10 h-10 rounded-lg bg-amber-500 flex items-center justify-center shadow-md overflow-hidden">
+        <svg viewBox="0 0 100 100" className="w-8 h-8 scale-150 translate-y-1">
+             <path d="M20 90 L 20 20 L 80 20 L 80 90 Z" className="fill-slate-900" /> {/* Tunic */}
+             <path d="M20 20 L 20 10 Q 50 -5 80 10 L 80 20" className="fill-slate-800" /> {/* Hat */}
+             <path d="M30 25 L 30 55 Q 50 70 70 55 L 70 25 Z" className="fill-amber-100" /> {/* Face */}
+             <path d="M35 35 L 45 37" className="stroke-slate-900 stroke-[3px]" />
+             <path d="M55 37 L 65 35" className="stroke-slate-900 stroke-[3px]" />
+             <circle cx="40" cy="40" r="2.5" className="fill-slate-900" />
+             <circle cx="60" cy="40" r="2.5" className="fill-slate-900" />
+             <path d="M40 50 Q 50 53 60 50" className="stroke-slate-900 stroke-[2px] fill-none" />
+             <path d="M30 50 Q 50 80 70 50 L 70 45 L 30 45 Z" className="fill-slate-800" /> {/* Beard */}
+        </svg>
+    </div>
+);
+
+const PriestIcon = () => (
+  <svg viewBox="0 0 100 100" className="w-24 h-24 mx-auto drop-shadow-lg" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20 90 L 20 40 Q 50 10 80 40 L 80 90 Z" className="fill-slate-800 stroke-slate-600" />
+    <path d="M50 20 L 50 90" className="stroke-slate-700" />
+    <circle cx="50" cy="45" r="15" className="fill-amber-100 stroke-amber-200" />
+    <path d="M40 55 Q 50 65 60 55" className="stroke-slate-800" />
+  </svg>
+);
+
+const PhariseeMascot = ({ onClick, speech, scale = 1 }) => (
+  <div className={`relative w-40 h-40 mx-auto cursor-pointer group ${scale === 1 ? 'mt-16 mb-4 z-0' : 'z-0'}`} style={{ transform: `scale(${scale})` }} onClick={onClick}>
+     {speech && (
+         <div className="absolute -top-20 left-1/2 -translate-x-1/2 bg-white text-slate-900 text-xs font-bold p-3 rounded-xl shadow-xl w-52 text-center animate-in fade-in zoom-in border-2 border-slate-800 z-0">
+             "{speech}"
+             <div className="absolute bottom-[-8px] left-1/2 -translate-x-1/2 w-4 h-4 bg-white border-b-2 border-r-2 border-slate-800 transform rotate-45"></div>
+         </div>
+     )}
+     <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-2xl transition-transform group-hover:scale-105" fill="none" stroke="none">
+        {/* Túnica Negra */}
+        <path d="M15 90 L 15 30 L 85 30 L 85 90 Z" className="fill-slate-900" />
+        <path d="M15 30 Q 50 100 85 30" className="fill-slate-800" /> 
+        
+        {/* Sombrero */}
+        <path d="M20 30 L 20 10 Q 50 -5 80 10 L 80 30" className="fill-slate-800" />
+        <rect x="25" y="25" width="50" height="8" className="fill-slate-950" />
+
+        {/* Cara */}
+        <path d="M30 35 L 30 70 Q 50 85 70 70 L 70 35 Z" className="fill-amber-100" />
+        
+        {/* Cejas (Animated) */}
+        <g className="animate-pulse"> 
+            <path d="M35 45 L 45 48" className="stroke-slate-900 stroke-[3px]" />
+            <path d="M55 48 L 65 45" className="stroke-slate-900 stroke-[3px]" />
+        </g>
+
+        {/* Ojos */}
+        <circle cx="40" cy="50" r="3" className="fill-slate-900" />
+        <circle cx="60" cy="50" r="3" className="fill-slate-900" />
+
+        {/* Barba */}
+        <path d="M30 65 Q 50 95 70 65 L 70 60 L 30 60 Z" className="fill-slate-800" />
+        
+        {/* Boca (Juzgando) */}
+        <path d="M45 75 Q 50 72 55 75" className="stroke-slate-950 stroke-[2px] fill-none" />
+     </svg>
+  </div>
+);
+
+const CurlyHairIcon = () => (
+    <svg viewBox="0 0 100 100" className="w-12 h-12 mx-auto mb-1">
+        <circle cx="50" cy="60" r="20" className="fill-indigo-100"/>
+        <path d="M30 50 Q 35 30 50 30 Q 65 30 70 50" className="fill-none stroke-slate-800 stroke-[3px]"/>
+        <circle cx="30" cy="45" r="5" className="fill-slate-800"/>
+        <circle cx="35" cy="35" r="5" className="fill-slate-800"/>
+        <circle cx="45" cy="30" r="5" className="fill-slate-800"/>
+        <circle cx="55" cy="30" r="5" className="fill-slate-800"/>
+        <circle cx="65" cy="35" r="5" className="fill-slate-800"/>
+        <circle cx="70" cy="45" r="5" className="fill-slate-800"/>
+        <circle cx="43" cy="60" r="2" className="fill-slate-900"/>
+        <circle cx="57" cy="60" r="2" className="fill-slate-900"/>
+        <path d="M45 70 Q 50 75 55 70" className="stroke-slate-900 stroke-[2px] fill-none"/>
+    </svg>
+);
+
+// --- COMPONENTES AUX ---
+const Button = ({ onClick, children, variant = 'primary', className = '', disabled = false, playClick = true }) => {
+  const handleClick = (e) => {
+    if (playClick) playSound('click');
+    if (onClick) onClick(e);
+  };
+  const baseStyle = "w-full py-3 px-4 rounded-lg font-bold transition-all transform active:scale-95 shadow-md flex items-center justify-center gap-2";
+  const variants = {
+    primary: "bg-indigo-600 hover:bg-indigo-700 text-white border-b-4 border-indigo-800",
+    secondary: "bg-amber-500 hover:bg-amber-600 text-white border-b-4 border-amber-700",
+    danger: "bg-red-500 hover:bg-red-600 text-white border-b-4 border-red-700",
+    outline: "bg-white text-slate-700 border-2 border-slate-200 hover:bg-slate-50",
+    ghost: "bg-transparent text-indigo-300 hover:text-white"
+  };
+  return (
+    <button onClick={handleClick} disabled={disabled} className={`${baseStyle} ${variants[variant]} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`}>
+      {children}
+    </button>
+  );
+};
+
+const Card = ({ children, className = '' }) => (
+  <div className={`bg-white rounded-xl shadow-xl p-5 ${className}`}>
+    {children}
+  </div>
+);
+
+const Modal = ({ isOpen, onClose, title, children, triggerSound, zIndex = "z-50" }) => {
+  if (!isOpen) return null;
+  return (
+    <div className={`fixed inset-0 ${zIndex} flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in`}>
+      <div className="bg-white rounded-xl w-full max-w-md max-h-[85vh] flex flex-col shadow-2xl">
+        <div className="p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-xl shrink-0">
+          <h3 className="font-bold text-slate-800">{title}</h3>
+          <button onClick={() => { if(triggerSound) triggerSound('click'); onClose(); }} className="p-1 hover:bg-slate-200 rounded-full"><X size={20} className="text-slate-500"/></button>
+        </div>
+        <div className="p-5 overflow-y-auto custom-scrollbar">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const Toast = ({ message, onClose }) => (
+    <div className="fixed bottom-20 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-4 py-2 rounded-full shadow-lg z-[80] flex items-center gap-2 text-sm animate-in fade-in slide-in-from-bottom-2">
+        <CheckCircle size={16} className="text-green-400"/>
+        {message}
+    </div>
+);
+
+// --- APP PRINCIPAL ---
+
+export default function App() {
+  const [gameState, setGameState] = useState('setup'); 
+  const [players, setPlayers] = useState([
+    { id: 1, name: 'Jugador 1', isDead: false },
+    { id: 2, name: 'Jugador 2', isDead: false },
+    { id: 3, name: 'Jugador 3', isDead: false }
+  ]);
+  
+  // Configuración
+  const [impostorCount, setImpostorCount] = useState(1);
+  const [categories, setCategories] = useState(BASE_CATEGORIES);
+  const [selectedCats, setSelectedCats] = useState(['libros', 'oficios', 'animales', 'objetos', 'vida_jesus']); 
+  const [timerDuration, setTimerDuration] = useState(1); 
+  const [timerEnabled, setTimerEnabled] = useState(true);
+  const [gameModeIndex, setGameModeIndex] = useState(0); 
+  const [gameFlow, setGameFlow] = useState('sanedrin'); 
+  const [showCategoryToImpostor, setShowCategoryToImpostor] = useState(true);
+  const [aiHintEnabled, setAiHintEnabled] = useState(false);
+  const [vibrationEnabled, setVibrationEnabled] = useState(true);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [musicEnabled, setMusicEnabled] = useState(true); 
+  const [vigiliaModeEnabled, setVigiliaModeEnabled] = useState(false);
+  const [partyStats, setPartyStats] = useState({}); 
+  const [vigiliaRounds, setVigiliaRounds] = useState(0);
+
+  // UI States
+  const [customTopic, setCustomTopic] = useState('');
+  const [customWordInput, setCustomWordInput] = useState('');
+  const [isGeneratingCat, setIsGeneratingCat] = useState(false);
+  const [generatedAiHint, setGeneratedAiHint] = useState('');
+  const [isGeneratingHint, setIsGeneratingHint] = useState(false);
+  const [showCustomWordsModal, setShowCustomWordsModal] = useState(false);
+  const [vigiliaRollIndex, setVigiliaRollIndex] = useState(0);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+  const [showResultModal, setShowResultModal] = useState(null); 
+  const [showResetStatsConfirm, setShowResetStatsConfirm] = useState(false);
+  const [showBackupModal, setShowBackupModal] = useState(false);
+  
+  // States for Category Editing
+  const [previewCatId, setPreviewCatId] = useState(null);
+  const [editingCatTitle, setEditingCatTitle] = useState(false);
+  const [newCatTitle, setNewCatTitle] = useState("");
+
+  // Game Logic State
+  const [gameData, setGameData] = useState(null);
+  const [currentRevealIndex, setCurrentRevealIndex] = useState(0);
+  const [isRevealing, setIsRevealing] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [showInfo, setShowInfo] = useState(false);
+  const [infoTab, setInfoTab] = useState('instructions');
+  const [mascotSpeech, setMascotSpeech] = useState("");
+  const [backupText, setBackupText] = useState("");
+
+  // Music & Sound Manager
+  useEffect(() => {
+      if (!bgMusic) {
+          bgMusic = new Audio('https://cdn.pixabay.com/download/audio/2024/05/14/audio_4db548b12d.mp3');
+          bgMusic.loop = true;
+          bgMusic.volume = 0.25;
+      }
+
+      const shouldPlay = musicEnabled && gameState !== 'setup' && gameState !== 'result-faithful' && gameState !== 'result-impostor';
+      
+      if (shouldPlay) {
+          bgMusic.play().catch(e => console.log("Audio play failed", e));
+      } else {
+          bgMusic.pause();
+      }
+  }, [musicEnabled, gameState]);
+
+  const triggerSound = (type) => { if (soundEnabled) playSound(type); };
+
+  // --- HELPER UI ---
+  const showNotification = (msg) => {
+      setToastMessage(msg);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 3000);
+  };
+
+  // --- MASCOTA ---
+  const handleMascotClick = () => {
+      triggerSound('click');
+      const phrases = ["¿Seguro que oraste?", "Yo ayuno dos veces por semana.", "¿Nazaret? Pff.", "A ver si tenés discernimiento...", "Me parece que ese es publicano.", "Vos no sabés nada de la Ley.", "¿Pagaste el diezmo?", "Esa vestimenta no es santa..."];
+      setMascotSpeech(phrases[Math.floor(Math.random() * phrases.length)]);
+      setTimeout(() => setMascotSpeech(""), 5000);
+  };
+
+  // --- CATEGORÍAS & PALABRAS ---
+  const applyPreset = (level) => {
+      triggerSound('click');
+      let newSelection = [];
+      if (level === 'easy') newSelection = ['libros', 'oficios', 'animales', 'objetos', 'vida_jesus'];
+      else if (level === 'medium') newSelection = ['libros', 'oficios', 'animales', 'objetos', 'vida_jesus', 'profetas', 'milagros', 'mujeres', 'lugares', 'reyes', 'bandas', 'random'];
+      else newSelection = Object.keys(categories);
+      setSelectedCats(newSelection);
+  };
+
+  const handleAddCustomWord = () => {
+      if (!customWordInput.trim()) return;
+      const word = customWordInput.trim();
+      setCategories(prev => ({
+          ...prev,
+          custom_added: {
+              id: 'custom_added',
+              name: 'Palabras Agregadas',
+              words: [...(prev.custom_added?.words || []), { term: word, ref: 'Agregada', active: true }]
+          }
+      }));
+      if (!selectedCats.includes('custom_added')) setSelectedCats(prev => [...prev, 'custom_added']);
+      setCustomWordInput('');
+      triggerSound('click');
+  };
+
+  const handleDeleteCustomWord = (term) => {
+      setCategories(prev => {
+          const newWords = prev.custom_added.words.filter(w => w.term !== term);
+          if (newWords.length === 0) {
+              const newCats = {...prev};
+              delete newCats.custom_added;
+              return newCats;
+          }
+          return { ...prev, custom_added: { ...prev.custom_added, words: newWords }};
+      });
+  };
+
+  const handleGenerateCategory = async () => {
+    if (!customTopic.trim()) return;
+    setIsGeneratingCat(true);
+    triggerSound('magic');
+    const prompt = `Genera una lista de 25 palabras o conceptos bíblicos relacionados con el tema: "${customTopic}". Devuelve SOLO un array JSON válido sin markdown. Formato: [{ "term": "Palabra", "ref": "Cita Bíblica" }]. Lenguaje: Español.`;
+    const result = await callGemini(prompt, true);
+    if (result && Array.isArray(result)) {
+        const newId = `custom_${Date.now()}`;
+        const words = result.map(w => ({ ...w, active: true }));
+        const newCat = { id: newId, name: `✨ ${customTopic}`, words: words };
+        setCategories(prev => ({ ...prev, [newId]: newCat }));
+        setSelectedCats(prev => [...prev, newId]);
+        setCustomTopic('');
+    } else {
+        alert("No se pudo invocar la sabiduría necesaria.");
+    }
+    setIsGeneratingCat(false);
+  };
+
+  const toggleCategory = (catId) => {
+    triggerSound('click');
+    setSelectedCats(prev => prev.includes(catId) ? prev.filter(c => c !== catId) : [...prev, catId]);
+  };
+
+  const toggleAllCategories = () => {
+    triggerSound('click');
+    setSelectedCats(selectedCats.length === Object.keys(categories).length ? [] : Object.keys(categories));
+  };
+
+  const toggleWordActive = (catId, term) => {
+      setCategories(prev => ({
+          ...prev,
+          [catId]: {
+              ...prev[catId],
+              words: prev[catId].words.map(w => w.term === term ? { ...w, active: !w.active } : w)
+          }
+      }));
+  };
+
+  const saveCatTitle = (catId) => {
+      if (newCatTitle.trim()) {
+          setCategories(prev => ({
+              ...prev,
+              [catId]: { ...prev[catId], name: newCatTitle }
+          }));
+      }
+      setEditingCatTitle(false);
+  };
+
+  // --- JUGADORES & PREFS ---
+  const handlePlayerCountChange = (delta) => {
+    triggerSound('click');
+    setPlayers(prev => {
+      if (delta > 0) return [...prev, { id: Date.now(), name: `Jugador ${prev.length + 1}`, isDead: false }];
+      if (prev.length <= 3) return prev;
+      return prev.slice(0, -1);
+    });
+  };
+
+  const updateName = (id, newName) => setPlayers(prev => prev.map(p => p.id === id ? { ...p, name: newName } : p));
+
+  const exportData = async () => {
+      triggerSound('click');
+      const data = { 
+          players, 
+          categories, 
+          partyStats, 
+          vigiliaModeEnabled,
+          vigiliaRounds,
+          settings: { impostorCount, timerDuration, timerEnabled, gameFlow, showCategoryToImpostor, aiHintEnabled, vibrationEnabled }
+      };
+      const text = JSON.stringify(data);
+      setBackupText(text);
+      setShowBackupModal(true); // Mostrar el modal
+      
+      try {
+          await copyToClipboard(text);
+          playSound('success');
+      } catch (err) {
+          // Si falla, el modal igual muestra el texto para copiar manual
+          playSound('error');
+      }
+  };
+
+  const importData = () => {
+      triggerSound('click');
+      try {
+          const data = JSON.parse(backupText);
+          if(data.players) setPlayers(data.players);
+          if(data.categories) setCategories(data.categories);
+          if(data.partyStats) setPartyStats(data.partyStats);
+          if(data.vigiliaModeEnabled !== undefined) setVigiliaModeEnabled(data.vigiliaModeEnabled);
+          if(data.vigiliaRounds) setVigiliaRounds(data.vigiliaRounds);
+          if(data.settings) {
+              setImpostorCount(data.settings.impostorCount);
+              setTimerDuration(data.settings.timerDuration);
+              setTimerEnabled(data.settings.timerEnabled);
+              setGameFlow(data.settings.gameFlow);
+              setShowCategoryToImpostor(data.settings.showCategoryToImpostor);
+              setAiHintEnabled(data.settings.aiHintEnabled);
+              setVibrationEnabled(data.settings.vibrationEnabled);
+          }
+          playSound('success');
+          setShowResultModal({ type: 'success', title: '¡Éxito!', msg: '¡Tus datos están cargados!' });
+      } catch (e) { 
+          playSound('error');
+          setShowResultModal({ type: 'error', title: 'Error al Cargar', msg: 'El código de backup es inválido. Verifica que esté completo.' });
+      }
+  };
+
+  const handleOpenBackup = () => {
+      exportData(); 
+  };
+
+  // --- GAMEPLAY ---
+  const handleReset = () => {
+    // Si estamos en vigilia, NO borramos datos, solo volvemos a setup
+    setGameState('setup');
+    setGameData(null);
+    setCurrentRevealIndex(0);
+    setIsRevealing(false);
+    setGeneratedAiHint('');
+    // No borramos stats aqui, solo en clearStats
+    if (!vigiliaModeEnabled) setPartyStats({});
+  };
+
+  const confirmResetStats = () => {
+      setPartyStats({});
+      setVigiliaRounds(0);
+      setShowResetStatsConfirm(false);
+      triggerSound('click');
+  }
+
+  const clearStats = () => {
+      setShowResetStatsConfirm(true);
+  }
+
+  const startGame = async (retryData = null) => {
+    let currentPlayers = players;
+    if (retryData) currentPlayers = retryData.originalPlayers.map(p => ({...p, isDead: false}));
+    if (!retryData && selectedCats.length === 0) return alert("¡Elegí categorías, che!");
+
+    const validCats = selectedCats.filter(id => categories[id]);
+    const randomCatId = validCats[Math.floor(Math.random() * validCats.length)];
+    const category = categories[randomCatId];
+    
+    if (vigiliaModeEnabled) {
+        setGameState('rolling');
+        let counter = 0;
+        const interval = setInterval(() => {
+            setVigiliaRollIndex(prev => (prev + 1) % GAME_MODES.length);
+            triggerSound('click');
+            counter++;
+            if (counter > 15) {
+                clearInterval(interval);
+                const finalModeIdx = Math.floor(Math.random() * GAME_MODES.length);
+                setVigiliaRollIndex(finalModeIdx);
+                setTimeout(() => {
+                    initializeRound(currentPlayers, category, GAME_MODES[finalModeIdx].id);
+                    setVigiliaRounds(prev => prev + 1);
+                }, 800);
+            }
+        }, 100);
+    } else {
+        const modeId = retryData ? retryData.modeId : GAME_MODES[gameModeIndex].id;
+        initializeRound(currentPlayers, category, modeId);
+    }
+  };
+
+  const initializeRound = (currentPlayers, category, activeModeId) => {
+    let activeWords = category.words.filter(w => w.active !== false);
+    if (activeWords.length === 0) activeWords = category.words; 
+
+    let wordList = [...activeWords];
+    if (activeModeId === 'babel') {
+         wordList.sort(() => Math.random() - 0.5);
+         while(wordList.length < currentPlayers.length) wordList = [...wordList, ...activeWords];
+    }
+    const mainWord = wordList[Math.floor(Math.random() * wordList.length)];
+
+    setGeneratedAiHint('');
+    if (aiHintEnabled) {
+        setIsGeneratingHint(true);
+        const prompt = `Genera una pista CORTA (max 10 palabras), ambigua y sutil sobre el término bíblico "${mainWord.term}" (Categoría: ${category.name}) para ayudar a un impostor.`;
+        callGemini(prompt, false).then(text => {
+            setGeneratedAiHint(text || "Sin inspiración divina...");
+            setIsGeneratingHint(false);
+        });
+    }
+
+    let roles = Array(currentPlayers.length).fill('faithful');
+    let impostorsIndices = new Set();
+    const targetImpostors = Math.min(impostorCount, currentPlayers.length);
+    while (impostorsIndices.size < targetImpostors) impostorsIndices.add(Math.floor(Math.random() * currentPlayers.length));
+    impostorsIndices.forEach(index => roles[index] = 'impostor');
+
+    let specialRoleIndices = { judas: -1, etiope: -1, zacarias: -1, sumo: -1, profeta: -1 };
+    let faithfulIndices = roles.map((r, i) => r === 'faithful' ? i : -1).filter(i => i !== -1);
+    
+    if (activeModeId === 'judas' && faithfulIndices.length > 0) specialRoleIndices.judas = faithfulIndices[Math.floor(Math.random() * faithfulIndices.length)];
+    if (activeModeId === 'etiope' && faithfulIndices.length > 0) specialRoleIndices.etiope = faithfulIndices[Math.floor(Math.random() * faithfulIndices.length)];
+    if (activeModeId === 'profeta' && faithfulIndices.length > 0) specialRoleIndices.profeta = faithfulIndices[Math.floor(Math.random() * faithfulIndices.length)];
+    if (activeModeId === 'zacarias') specialRoleIndices.zacarias = Math.floor(Math.random() * currentPlayers.length);
+    if (activeModeId === 'sumo') specialRoleIndices.sumo = Math.floor(Math.random() * currentPlayers.length);
+
+    const gamePlayers = currentPlayers.map((p, i) => {
+        let assignedWord = mainWord;
+        if (activeModeId === 'babel' && roles[i] === 'faithful') assignedWord = wordList[i];
+        if (i === specialRoleIndices.etiope) assignedWord = { term: '???', ref: '' };
+
+        return {
+            ...p,
+            role: roles[i],
+            specialRole: 
+                i === specialRoleIndices.judas ? 'judas' :
+                i === specialRoleIndices.etiope ? 'etiope' :
+                i === specialRoleIndices.zacarias ? 'zacarias' :
+                i === specialRoleIndices.sumo ? 'sumo' : 
+                i === specialRoleIndices.profeta ? 'profeta' : null,
+            wordObj: assignedWord, 
+            isDead: false
+        };
+    });
+
+    const activePlayers = gamePlayers.filter(p => p.role !== 'impostor');
+    const pool = activePlayers.length > 0 ? activePlayers : gamePlayers;
+    const starterName = pool[Math.floor(Math.random() * pool.length)].name;
+
+    setGameData({
+      players: gamePlayers,
+      originalPlayers: currentPlayers,
+      categoryName: category.name,
+      starterName,
+      round: 1,
+      modeId: activeModeId,
+      impostorsIndices: Array.from(impostorsIndices), 
+      specialRoleIndices
+    });
+
+    setCurrentRevealIndex(0);
+    setIsRevealing(false);
+    setGameState('reveal');
+  };
+
+  const nextReveal = () => {
+    setIsRevealing(false);
+    if (currentRevealIndex + 1 >= players.length) setGameState('pre-game');
+    else setCurrentRevealIndex(prev => prev + 1);
+  };
+
+  const beginDebate = () => {
+    if (timerEnabled) setTimeLeft(timerDuration * 60);
+    setGameState('playing');
+  };
+
+  const updatePartyStats = (winnerRole) => {
+      if (!vigiliaModeEnabled) return;
+      setPartyStats(prev => {
+          const newStats = { ...prev };
+          gameData.players.forEach(p => {
+              if (!newStats[p.id]) newStats[p.id] = { faithfulWins: 0, impostorWins: 0, ejected: 0 };
+              if (p.isDead) newStats[p.id].ejected += 1;
+              if (winnerRole === 'faithful' && p.role === 'faithful') newStats[p.id].faithfulWins += 1;
+              else if (winnerRole === 'impostor' && p.role === 'impostor') newStats[p.id].impostorWins += 1;
+              if (winnerRole === 'impostor' && p.specialRole === 'judas') newStats[p.id].faithfulWins += 1; 
+          });
+          return newStats;
+      });
+  };
+
+  const ejectPlayer = (playerId) => {
+    const player = gameData.players.find(p => p.id === playerId);
+    
+    // Win Logic
+    if (player.role === 'impostor') {
+        const remainingImpostors = gameData.players.filter(p => p.id !== playerId && !p.isDead && p.role === 'impostor');
+        if (remainingImpostors.length === 0) {
+            updatePartyStats('faithful');
+            triggerSound('win-faithful');
+            setGameState('result-faithful');
+            return;
+        }
+    }
+
+    const updatedPlayers = gameData.players.map(p => p.id === playerId ? { ...p, isDead: true } : p);
+    const impostorsAlive = updatedPlayers.filter(p => !p.isDead && p.role === 'impostor').length;
+    const faithfulAlive = updatedPlayers.filter(p => !p.isDead && p.role === 'faithful').length;
+
+    if ((impostorsAlive >= faithfulAlive && faithfulAlive > 0) || (faithfulAlive === 0 && impostorsAlive > 0)) {
+        updatePartyStats('impostor');
+        triggerSound('win-impostor');
+        setGameData(prev => ({ ...prev, players: updatedPlayers }));
+        setGameState('result-impostor');
+        return;
+    }
+
+    setGameData(prev => ({ ...prev, players: updatedPlayers, lastEjected: player }));
+
+    if (gameFlow === 'armageddon') setGameState('round-result');
+    else {
+        if (player.role === 'impostor') {
+            updatePartyStats('faithful');
+            triggerSound('win-faithful');
+            setGameState('result-faithful');
+        } else {
+            updatePartyStats('impostor');
+            triggerSound('win-impostor');
+            setGameState('result-impostor');
+        }
+    }
+  };
+
+  const continueArmageddon = () => {
+      if (timerEnabled) setTimeLeft(timerDuration * 60);
+      setGameData(prev => ({...prev, round: prev.round + 1}));
+      setGameState('playing');
+  };
+
+  useEffect(() => {
+    let interval = null;
+    if (gameState === 'playing' && timerEnabled && timeLeft > 0) {
+      interval = setInterval(() => { setTimeLeft(prev => prev - 1); }, 1000);
+    } else if (timeLeft === 0 && gameState === 'playing' && timerEnabled) {
+      if (soundEnabled) playSound('alarm');
+      if (soundEnabled && vibrationEnabled && navigator.vibrate) navigator.vibrate([500, 200, 500, 200, 800]);
+    }
+    return () => clearInterval(interval);
+  }, [gameState, timeLeft, vibrationEnabled, timerEnabled, soundEnabled]);
+
+  const formatTime = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const getActiveMode = () => GAME_MODES.find(m => m.id === (gameData ? gameData.modeId : GAME_MODES[gameModeIndex].id));
+
+  // --- RENDER ---
+
+  return (
+    <div className="min-h-screen bg-slate-900 text-slate-100 font-sans selection:bg-indigo-500 selection:text-white pb-10">
+      
+      {/* HEADER */}
+      <header className="bg-slate-800 border-b border-slate-700 p-3 shadow-lg sticky top-0 z-50">
+        <div className="max-w-md mx-auto flex items-center justify-between">
+          <button onClick={handleReset} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+            <AppIcon />
+            <div>
+              <h1 className="font-extrabold text-lg leading-none text-white tracking-tight">El Fariseo</h1>
+              <span className="text-[10px] text-indigo-300 font-semibold tracking-widest uppercase">Infiltrado</span>
+            </div>
+          </button>
+          <div className="flex gap-2">
+            <button onClick={handleOpenBackup} className="p-2 rounded-full hover:bg-slate-600 bg-slate-700 text-slate-200">
+                <Save size={18}/>
+            </button>
+            <button onClick={() => { setMusicEnabled(!musicEnabled); triggerSound('click'); }} className={`p-2 rounded-full hover:bg-slate-600 ${!musicEnabled ? 'text-slate-500 bg-slate-800' : 'bg-slate-700 text-indigo-400'}`}>
+                <Music size={18}/>
+            </button>
+            <button onClick={() => { setSoundEnabled(!soundEnabled); triggerSound('click'); }} className={`p-2 rounded-full hover:bg-slate-600 ${!soundEnabled ? 'text-slate-500 bg-slate-800' : 'bg-slate-700'}`}>
+                {soundEnabled ? <Volume2 size={18}/> : <VolumeX size={18}/>}
+            </button>
+            <button onClick={() => { setInfoTab('instructions'); setShowInfo(true); triggerSound('click'); }} className="p-2 bg-slate-700 rounded-full hover:bg-slate-600"><Info size={18}/></button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-md mx-auto p-4 relative z-0">
+
+        {/* --- TOAST --- */}
+        {showToast && <Toast message={toastMessage} />}
+
+        {/* --- MODALES --- */}
+        <Modal isOpen={!!showResultModal} onClose={() => setShowResultModal(null)} title={showResultModal?.title} triggerSound={triggerSound} zIndex="z-[100]">
+            <div className="text-center p-4">
+                <div className={`mx-auto mb-4 p-3 rounded-full inline-block ${showResultModal?.type === 'success' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                    {showResultModal?.type === 'success' ? <CheckCircle size={32}/> : <XCircle size={32}/>}
+                </div>
+                <p className="text-slate-700 font-medium mb-4">{showResultModal?.msg}</p>
+                <Button onClick={() => setShowResultModal(null)} variant={showResultModal?.type === 'success' ? 'primary' : 'danger'}>Entendido</Button>
+            </div>
+        </Modal>
+
+        <Modal isOpen={showResetStatsConfirm} onClose={() => setShowResetStatsConfirm(false)} title="¿Reiniciar Tabla?" triggerSound={triggerSound} zIndex="z-[100]">
+             <div className="space-y-4">
+                <div className="flex items-center gap-3 bg-red-50 p-3 rounded-lg border border-red-200">
+                    <Trash2 className="text-red-500" size={24} />
+                    <p className="text-sm text-slate-700">Se borrarán todas las victorias y estadísticas de Vigilia.</p>
+                </div>
+                <div className="flex gap-3">
+                    <Button onClick={() => setShowResetStatsConfirm(false)} variant="outline">Cancelar</Button>
+                    <Button onClick={confirmResetStats} variant="danger">Reiniciar Todo</Button>
+                </div>
+            </div>
+        </Modal>
+
+        {/* Backup Modal - Shows code + Copy */}
+        <Modal isOpen={showBackupModal} onClose={() => setShowBackupModal(false)} title="Guardar Progreso" triggerSound={triggerSound} zIndex="z-[100]">
+            <div className="space-y-4">
+               <div className="flex items-center gap-3 bg-indigo-50 p-3 rounded-lg border border-indigo-200">
+                    <ClipboardCopy className="text-indigo-500" size={24} />
+                    <p className="text-sm text-slate-700">El código de backup ha sido generado. Cópialo y guárdalo en tus notas para no perder tu progreso.</p>
+                </div>
+                <textarea 
+                    className="w-full h-32 bg-slate-100 text-slate-900 text-xs p-2 rounded border border-slate-300 font-mono"
+                    value={backupText}
+                    readOnly
+                />
+                <Button onClick={() => { copyToClipboard(backupText); playSound('success'); setShowBackupModal(false); }} variant="primary">
+                   <Copy size={16} className="mr-2"/> Copiar y Cerrar
+                </Button>
+            </div>
+        </Modal>
+
+        {/* CATEGORY DETAILS MODAL */}
+        <Modal isOpen={!!previewCatId} onClose={() => setPreviewCatId(null)} title="Detalle Categoría" triggerSound={triggerSound}>
+           {previewCatId && categories[previewCatId] && (
+               <div className="space-y-3">
+                   {/* Edit Title for AI Cats */}
+                   {previewCatId.startsWith('custom_') && (
+                       <div className="flex gap-2 items-center mb-4">
+                           {editingCatTitle ? (
+                               <>
+                                   <input 
+                                     type="text" 
+                                     value={newCatTitle} 
+                                     onChange={(e) => setNewCatTitle(e.target.value)}
+                                     className="flex-1 border p-1 rounded text-slate-800"
+                                   />
+                                   <button onClick={() => saveCatTitle(previewCatId)} className="text-green-600"><CheckSquare/></button>
+                               </>
+                           ) : (
+                               <>
+                                   <h3 className="font-bold text-lg text-slate-800 flex-1">{categories[previewCatId].name}</h3>
+                                   <button onClick={() => { setNewCatTitle(categories[previewCatId].name); setEditingCatTitle(true); }} className="text-slate-400"><PenLine size={16}/></button>
+                               </>
+                           )}
+                       </div>
+                   )}
+
+                   <div className="max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                       {categories[previewCatId].words.map((w, i) => (
+                           <div key={i} className="flex justify-between items-center py-2 border-b border-slate-100">
+                               <div className={w.active === false ? 'opacity-40 line-through decoration-slate-400' : ''}>
+                                   <span className="font-bold text-slate-700 block text-sm">{w.term}</span>
+                                   <span className="text-xs text-slate-400">{w.ref}</span>
+                               </div>
+                               <button onClick={() => toggleWordActive(previewCatId, w.term)} className="text-indigo-600">
+                                   {w.active !== false ? <CheckSquare size={18}/> : <Square size={18}/>}
+                               </button>
+                           </div>
+                       ))}
+                   </div>
+               </div>
+           )}
+        </Modal>
+
+        <Modal isOpen={showCustomWordsModal} onClose={() => setShowCustomWordsModal(false)} title="Palabras Agregadas" triggerSound={triggerSound}>
+            <div className="space-y-2">
+                {categories.custom_added && categories.custom_added.words.length > 0 ? (
+                    categories.custom_added.words.map((w, i) => (
+                        <div key={i} className="flex justify-between items-center bg-slate-50 p-2 rounded">
+                            <span className="text-slate-800 font-bold">{w.term}</span>
+                            <button onClick={() => handleDeleteCustomWord(w.term)} className="text-red-500"><Trash2 size={16}/></button>
+                        </div>
+                    ))
+                ) : <p className="text-slate-500 text-center italic">No hay palabras agregadas.</p>}
+                {categories.custom_added && (
+                    <button onClick={() => { setCategories(prev => { const n = {...prev}; delete n.custom_added; return n; }); }} className="w-full text-red-600 text-xs font-bold mt-4 border border-red-200 p-2 rounded">Eliminar Todas</button>
+                )}
+            </div>
+        </Modal>
+
+        <Modal isOpen={showInfo} onClose={() => setShowInfo(false)} title="Información" triggerSound={triggerSound}>
+           <div className="flex space-x-2 border-b border-slate-200 mb-4 pb-1 overflow-x-auto">
+               <button onClick={() => setInfoTab('instructions')} className={`px-3 py-2 font-bold text-sm ${infoTab === 'instructions' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}>Instrucciones</button>
+               <button onClick={() => setInfoTab('backup')} className={`px-3 py-2 font-bold text-sm ${infoTab === 'backup' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}>Backup</button>
+               <button onClick={() => setInfoTab('credits')} className={`px-3 py-2 font-bold text-sm ${infoTab === 'credits' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}>Créditos</button>
+           </div>
+           
+           {infoTab === 'credits' ? (
+               <div className="text-center space-y-4">
+                  <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex flex-col items-center">
+                    <CurlyHairIcon />
+                    <p className="font-bold text-xl text-indigo-700">Nicolás Francisco</p>
+                    <a href="https://instagram.com/comunicador.cristiano" target="_blank" rel="noreferrer" className="text-sm text-indigo-500 hover:underline flex items-center justify-center gap-1 mb-2">
+                        <ExternalLink size={14} /> @comunicador.cristiano
+                    </a>
+                    <p className="font-bold text-slate-700 text-sm">CCO Peniel</p>
+                  </div>
+                  <p className="text-slate-500 text-sm italic border-l-4 border-amber-400 pl-3 text-left bg-slate-50 p-2 rounded">
+                    "Y todo lo que hagáis, hacedlo de corazón, como para el Señor y no para los hombres." - Colosenses 3:23
+                  </p>
+                  <p className="text-xs text-indigo-400 font-bold flex items-center justify-center gap-2">
+                      <Sparkles size={12} /> Anímense a usar la IA para bendecir.
+                  </p>
+               </div>
+           ) : infoTab === 'backup' ? (
+               <div className="space-y-4">
+                   <p className="text-xs text-slate-500">Pega aquí tu código de respaldo para cargar el progreso.</p>
+                   <textarea 
+                        className="w-full h-32 bg-slate-100 text-slate-900 text-xs p-2 rounded border border-slate-300 font-mono"
+                        value={backupText}
+                        onChange={(e) => setBackupText(e.target.value)}
+                        placeholder="Pegar código aquí..."
+                   />
+                   <div className="flex gap-2">
+                       <button onClick={importData} className="flex-1 bg-green-600 text-white py-2 rounded text-xs font-bold flex items-center justify-center gap-2"><Upload size={14}/> Cargar Backup</button>
+                   </div>
+               </div>
+           ) : (
+               <div className="space-y-4 text-slate-700 text-sm">
+                   <div className="bg-slate-50 p-3 rounded-lg border-l-4 border-slate-500">
+                       <h4 className="font-bold text-slate-800 mb-1">Objetivo General</h4>
+                       <p>El clásico juego del impostor, con temática bíblica. Todos reciben una palabra secreta excepto el <strong>Fariseo</strong>. Hagan preguntas para descubrirlo. ¡A divertirse!</p>
+                   </div>
+                   
+                   <div className="space-y-3">
+                       <h4 className="font-bold text-slate-900 border-b border-slate-200 pb-1">Flujo del Juego</h4>
+                       <div>
+                           <strong className="text-indigo-700">Sanedrín</strong>
+                           <p className="text-xs">Modo súbito. Una sola votación y termina el juego.</p>
+                       </div>
+                       <div>
+                           <strong className="text-red-700">Armagedón</strong>
+                           <p className="text-xs">Si expulsan a un inocente, el juego sigue. Termina al eliminar a todos los fariseos o si estos igualan en número a los fieles.</p>
+                       </div>
+                       <div>
+                           <strong className="text-amber-700">Vigilia</strong>
+                           <p className="text-xs">Modo aleatorio que rota entre mecánicas cada ronda y lleva un registro de puntajes.</p>
+                       </div>
+                       <p className="text-[10px] text-slate-400 italic mt-2">PD: Podés guardar tu progreso en la pestaña Backup.</p>
+
+                       <h4 className="font-bold text-slate-900 border-b border-slate-200 pb-1 mt-4">Roles Especiales</h4>
+                       <div>
+                           <strong className="text-indigo-600">El Profeta</strong>
+                           <p className="text-xs">Sabe quiénes son los fariseos, pero NO puede revelarlo ni votarlos directamente. Debe guiar.</p>
+                       </div>
+                       <div>
+                           <strong className="text-indigo-600">Modo Zacarías</strong>
+                           <p className="text-xs">Un jugador queda mudo. Solo mímica.</p>
+                       </div>
+                       <div>
+                           <strong className="text-indigo-600">Sumo Sacerdote</strong>
+                           <p className="text-xs">Un jugador no juega, solo modera.</p>
+                       </div>
+                       <div>
+                           <strong className="text-indigo-600">Etíope</strong>
+                           <p className="text-xs">Fiel que no sabe la palabra. Debe descubrirla sin delatarse.</p>
+                       </div>
+                   </div>
+               </div>
+           )}
+        </Modal>
+
+
+        {/* --- PANTALLA 1: SETUP --- */}
+        {gameState === 'setup' && (
+          <div className="space-y-6 animate-in fade-in zoom-in duration-300">
+            <div className="pt-2 relative z-0">
+               <PhariseeMascot onClick={handleMascotClick} speech={mascotSpeech} />
+            </div>
+            
+            {/* Jugadores */}
+            <Card className="relative z-10">
+              <div className="flex justify-between items-center mb-3">
+                <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                  <Users className="text-indigo-600" size={18} /> Jugadores
+                </h2>
+                <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
+                  <button onClick={() => { handlePlayerCountChange(-1); setGameModeIndex(0); }} className="p-1 text-slate-600 hover:bg-white rounded transition"><UserMinus size={16}/></button>
+                  <span className="font-mono font-bold text-lg text-slate-800 w-5 text-center">{players.length}</span>
+                  <button onClick={() => handlePlayerCountChange(1)} className="p-1 text-slate-600 hover:bg-white rounded transition"><Users size={16}/></button>
+                </div>
+              </div>
+              <div className="space-y-2 overflow-visible">
+                {players.map((p, i) => (
+                  <input
+                    key={p.id}
+                    type="text"
+                    value={p.name}
+                    onChange={(e) => updateName(p.id, e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                  />
+                ))}
+              </div>
+            </Card>
+
+            {/* Configuración de Modos */}
+            <Card>
+              <h2 className="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+                <Settings className="text-indigo-600" size={18} /> Reglas de juego
+              </h2>
+
+              {/* Game Flow Select */}
+              <div className="flex bg-slate-100 p-1 rounded-lg mb-3">
+                 <button onClick={() => setGameFlow('sanedrin')} className={`flex-1 py-1 text-xs font-bold rounded-md transition ${gameFlow === 'sanedrin' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500'}`}>
+                    SANEDRÍN
+                 </button>
+                 <button onClick={() => setGameFlow('armageddon')} className={`flex-1 py-1 text-xs font-bold rounded-md transition ${gameFlow === 'armageddon' ? 'bg-red-500 text-white shadow-sm' : 'text-slate-500'}`}>
+                    ARMAGEDÓN
+                 </button>
+              </div>
+              <p className="text-[10px] text-center text-slate-500 mb-4 px-2">
+                  {gameFlow === 'sanedrin' 
+                    ? "Modo súbito. Una sola votación y termina el juego." 
+                    : "Si expulsan a un inocente, el juego sigue. Termina al eliminar a todos los fariseos o si estos igualan en número a los fieles."}
+              </p>
+
+              {/* Slider Horizontal (Desactivado en Vigilia) */}
+              <div className={`transition-opacity ${vigiliaModeEnabled ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+                  <div className="flex gap-3 overflow-x-auto pb-4 snap-x custom-scrollbar">
+                      {GAME_MODES.map((mode, idx) => (
+                          <button
+                            key={mode.id}
+                            onClick={() => { setGameModeIndex(idx); triggerSound('click'); }}
+                            className={`
+                                min-w-[120px] p-3 rounded-xl border-2 flex flex-col items-center justify-center gap-2 transition-all snap-center shrink-0
+                                ${gameModeIndex === idx 
+                                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-md transform scale-105' 
+                                    : 'border-slate-100 bg-slate-50 text-slate-400 grayscale'}
+                            `}
+                          >
+                              {mode.icon}
+                              <div className="text-center">
+                                  <span className="block text-xs font-bold leading-tight">{mode.label}</span>
+                                  <span className="block text-[10px] opacity-70">{mode.sub}</span>
+                              </div>
+                          </button>
+                      ))}
+                  </div>
+                  {!vigiliaModeEnabled && (
+                      <div className="bg-slate-100 p-2 rounded text-center mb-3 border border-slate-200">
+                          <p className="text-[10px] text-slate-600 font-medium">{GAME_MODES[gameModeIndex].desc}</p>
+                      </div>
+                  )}
+              </div>
+
+              {/* Vigilia Toggle (Ahora debajo del Slider) */}
+              <div className={`flex items-center justify-between p-2 rounded-lg mt-4 mb-3 transition-colors ${vigiliaModeEnabled ? 'bg-amber-100 border border-amber-300' : 'bg-slate-100 border border-slate-200'}`}>
+                <div className="flex flex-col">
+                    <label className="text-xs text-slate-800 font-black flex items-center gap-2 uppercase tracking-wide">
+                        <Flame size={16} className={vigiliaModeEnabled ? 'text-amber-600' : 'text-slate-400'}/> Vigilia
+                    </label>
+                    <span className="text-[10px] text-slate-500">Modos aleatorios + Ranking</span>
+                </div>
+                <button onClick={() => { setVigiliaModeEnabled(!vigiliaModeEnabled); triggerSound('click'); }} className={`w-10 h-5 rounded-full relative transition ${vigiliaModeEnabled ? 'bg-amber-500' : 'bg-slate-300'}`}>
+                    <div className={`absolute w-3 h-3 bg-white rounded-full top-1 transition-all ${vigiliaModeEnabled ? 'left-6' : 'left-1'}`} />
+                </button>
+              </div>
+
+              {/* Resto de Settings */}
+              <div className="space-y-3 pt-2 border-t border-slate-100">
+                 <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col">
+                        <label className="text-xs font-bold text-slate-500 mb-1 flex items-center gap-1">
+                            Fariseos {impostorCount === players.length && '😜'}
+                        </label>
+                        <select 
+                            value={impostorCount} 
+                            onChange={(e) => setImpostorCount(Number(e.target.value))}
+                            className="bg-slate-100 rounded px-2 py-2 text-sm font-bold text-slate-800 border-none"
+                        >
+                        {[...Array(players.length).keys()].map(i => {
+                            const val = i + 1;
+                            return <option key={val} value={val}>{val}</option>
+                        })}
+                        </select>
+                    </div>
+                    <div className="flex flex-col">
+                        <div className="flex justify-between items-center mb-1">
+                            <label className="text-xs font-bold text-slate-500">Timer</label>
+                            <input type="checkbox" checked={timerEnabled} onChange={(e) => setTimerEnabled(e.target.checked)} className="rounded text-indigo-600 focus:ring-indigo-500 h-3 w-3" />
+                        </div>
+                        <select 
+                            value={timerDuration} 
+                            onChange={(e) => setTimerDuration(Number(e.target.value))}
+                            disabled={!timerEnabled}
+                            className={`bg-slate-100 rounded px-2 py-2 text-sm font-bold border-none ${!timerEnabled ? 'text-slate-300' : 'text-slate-800'}`}
+                        >
+                        {[1, 3, 5, 7, 10, 15].map(n => <option key={n} value={n}>{n} min</option>)}
+                        </select>
+                    </div>
+                 </div>
+
+                 {/* Toggles */}
+                 <div className="grid grid-cols-1 gap-2 pt-2 border-t border-slate-100">
+                     <div className="flex items-center justify-between">
+                        <label className="text-xs text-slate-600 font-medium">Categoría visible al Fariseo</label>
+                        <button onClick={() => setShowCategoryToImpostor(!showCategoryToImpostor)} className={`w-10 h-5 rounded-full relative transition ${showCategoryToImpostor ? 'bg-green-500' : 'bg-slate-300'}`}>
+                            <div className={`absolute w-3 h-3 bg-white rounded-full top-1 transition-all ${showCategoryToImpostor ? 'left-6' : 'left-1'}`} />
+                        </button>
+                     </div>
+                     <div className="flex items-center justify-between">
+                        <label className="text-xs text-slate-600 font-medium flex items-center gap-1">Pista IA para el Fariseo <Sparkles size={12} className="text-amber-500"/></label>
+                        <button onClick={() => setAiHintEnabled(!aiHintEnabled)} className={`w-10 h-5 rounded-full relative transition ${aiHintEnabled ? 'bg-indigo-500' : 'bg-slate-300'}`}>
+                            <div className={`absolute w-3 h-3 bg-white rounded-full top-1 transition-all ${aiHintEnabled ? 'left-6' : 'left-1'}`} />
+                        </button>
+                     </div>
+                     <div className="flex items-center justify-between">
+                        <label className={`text-xs font-medium ${timerEnabled ? 'text-slate-600' : 'text-slate-300'}`}>Vibrar y sonar al terminar la ronda</label>
+                        <button disabled={!timerEnabled} onClick={() => setVibrationEnabled(!vibrationEnabled)} className={`p-1 rounded ${vibrationEnabled && timerEnabled ? 'text-indigo-600 bg-indigo-50' : 'text-slate-300 bg-slate-100'}`}>
+                            {vibrationEnabled ? <Volume2 size={16}/> : <VolumeX size={16}/>}
+                        </button>
+                     </div>
+                 </div>
+              </div>
+            </Card>
+
+            {/* Categorías */}
+            <Card>
+              <div className="flex justify-between items-center mb-3">
+                <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                  <BookOpen className="text-indigo-600" size={18} /> Categorías
+                </h2>
+                <div className="flex gap-1">
+                    <button onClick={() => applyPreset('easy')} className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-1 rounded hover:bg-green-200">FÁCIL</button>
+                    <button onClick={() => applyPreset('medium')} className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded hover:bg-amber-200">MEDIO</button>
+                    <button onClick={() => applyPreset('hard')} className="text-[10px] font-bold bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200">DIFÍCIL</button>
+                </div>
+              </div>
+              
+              {/* IA GENERATOR & ADD WORD */}
+              <div className="space-y-2 mb-4">
+                  <div className="bg-indigo-50 p-2 rounded-lg border border-indigo-100 flex gap-2 items-center">
+                      <Sparkles size={14} className="text-indigo-500 ml-1"/>
+                      <input 
+                        type="text" 
+                        value={customTopic}
+                        onChange={(e) => setCustomTopic(e.target.value)}
+                        placeholder="Generar tema con IA..."
+                        className="flex-1 text-xs bg-transparent focus:outline-none text-indigo-900"
+                      />
+                      <button onClick={handleGenerateCategory} disabled={isGeneratingCat || !customTopic} className="text-indigo-600 p-1">
+                          {isGeneratingCat ? <Loader2 size={16} className="animate-spin"/> : <ChevronRight size={16}/>}
+                      </button>
+                  </div>
+                  <div className="bg-slate-100 p-2 rounded-lg border border-slate-200 flex gap-2 items-center"> {/* Removed relative */}
+                      <PlusCircle size={14} className="text-slate-500 ml-1"/>
+                      <input 
+                        type="text" 
+                        value={customWordInput}
+                        onChange={(e) => setCustomWordInput(e.target.value)}
+                        placeholder="Agregar palabra suelta..."
+                        className="flex-1 text-xs bg-transparent focus:outline-none text-slate-800"
+                      />
+                      <button onClick={handleAddCustomWord} disabled={!customWordInput} className="text-slate-600 p-1 hover:text-green-600">
+                          <ChevronRight size={16}/>
+                      </button>
+                      {/* Divider */}
+                      <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                      <button onClick={() => setShowCustomWordsModal(true)} className="p-1 text-slate-400 hover:text-slate-600">
+                          <Edit3 size={14}/>
+                      </button>
+                  </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {Object.values(categories).map((cat) => {
+                  if (cat.id === 'custom_added') return null; // No mostrar custom aquí
+                  const isSelected = selectedCats.includes(cat.id);
+                  return (
+                    <div 
+                      key={cat.id}
+                      className={`relative rounded-md px-2 py-2 text-xs font-bold transition-all border flex items-center justify-between cursor-pointer ${
+                        isSelected 
+                          ? 'bg-indigo-50 border-indigo-200 text-indigo-700' 
+                          : 'bg-slate-50 border-slate-100 text-slate-400'
+                      }`}
+                    >
+                      <span onClick={() => toggleCategory(cat.id)} className="flex-1 truncate">{cat.name}</span>
+                      <button onClick={(e) => { e.stopPropagation(); setPreviewCatId(cat.id); triggerSound('click'); }} className="p-1 hover:text-indigo-500 z-10">
+                        <Eye size={14} />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            </Card>
+
+            <Button onClick={() => startGame(null)} variant="secondary" className="text-lg animate-pulse shadow-amber-500/20">
+              <Play size={20} fill="currentColor" /> COMENZAR MISIÓN
+            </Button>
+          </div>
+        )}
+
+        {/* --- PANTALLA: ROLL ANIMATION --- */}
+        {gameState === 'rolling' && (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] mt-12">
+                <div className="text-4xl animate-spin mb-4">🎲</div>
+                <h2 className="text-2xl font-black text-white mb-2">Sorteando Modo...</h2>
+                <div className="bg-white p-6 rounded-xl shadow-2xl scale-125 transition-all">
+                    <div className="text-indigo-600 mb-2 flex justify-center">{GAME_MODES[vigiliaRollIndex].icon}</div>
+                    <h3 className="text-xl font-bold text-slate-800 text-center">{GAME_MODES[vigiliaRollIndex].label}</h3>
+                </div>
+            </div>
+        )}
+
+        {/* --- PANTALLA 2: REVELACIÓN --- */}
+        {gameState === 'reveal' && (
+          <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6 animate-in slide-in-from-right duration-300">
+            <div className="text-center space-y-1">
+              <h2 className="text-indigo-300 uppercase tracking-widest text-xs font-bold">Turno de</h2>
+              <h1 className="text-3xl font-extrabold text-white">{gameData.players[currentRevealIndex].name}</h1>
+            </div>
+
+            <div className="w-full max-w-sm">
+              <div className={`relative w-full aspect-[4/5] bg-white rounded-xl shadow-2xl overflow-hidden transition-all duration-300`}>
+                {!isRevealing ? (
+                  <div 
+                    onClick={() => { setIsRevealing(true); triggerSound('reveal'); }}
+                    className="absolute inset-0 bg-indigo-600 flex flex-col items-center justify-center p-6 text-center cursor-pointer active:bg-indigo-700"
+                  >
+                    <Eye size={48} className="text-indigo-200 mb-3 animate-bounce" />
+                    <h3 className="text-xl font-bold text-white mb-2">Tocá para revelar</h3>
+                    <p className="text-indigo-200 text-xs">Mirá que nadie te espíe el celular.</p>
+                  </div>
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-50">
+                    
+                    <h3 className="text-slate-400 font-bold uppercase text-xs tracking-wider mb-2">Tu Rol es</h3>
+                    
+                    {gameData.players[currentRevealIndex].role === 'impostor' ? (
+                      <>
+                        <div className="text-center mb-4 scale-75">
+                             <PhariseeMascot scale={0.8} />
+                        </div>
+                        <h2 className="text-2xl font-black text-red-600 mb-2">FARISEO</h2>
+                        <p className="text-slate-600 text-sm mb-4">Infiltrate. Fingí que sabés de qué hablan.</p>
+                        
+                        <div className="w-full space-y-2">
+                            {showCategoryToImpostor && (
+                                <div className="bg-slate-200 px-3 py-2 rounded w-full">
+                                    <span className="text-slate-500 text-[10px] font-bold uppercase block">Categoría</span>
+                                    <span className="text-slate-800 font-bold text-sm">{gameData.categoryName}</span>
+                                </div>
+                            )}
+                            
+                            {aiHintEnabled && (
+                                <div className="bg-amber-50 border border-amber-200 px-3 py-2 rounded w-full">
+                                    <span className="text-amber-500 text-[10px] font-bold uppercase block flex items-center justify-center gap-1"><Sparkles size={10}/> Pista Divina (IA)</span>
+                                    {isGeneratingHint ? (
+                                        <div className="flex justify-center p-2"><Loader2 size={16} className="animate-spin text-amber-500"/></div>
+                                    ) : (
+                                        <p className="text-amber-800 font-bold text-xs italic">"{generatedAiHint}"</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="bg-green-100 p-3 rounded-full mb-3"><BookOpen size={32} className="text-green-600" /></div>
+                        
+                        {gameData.players[currentRevealIndex].specialRole === 'judas' ? (
+                            <h2 className="text-2xl font-black text-amber-600 mb-2">EL JUDAS</h2>
+                        ) : gameData.players[currentRevealIndex].specialRole === 'etiope' ? (
+                            <h2 className="text-2xl font-black text-purple-600 mb-2">EL ETÍOPE</h2>
+                        ) : gameData.players[currentRevealIndex].specialRole === 'profeta' ? (
+                            <h2 className="text-2xl font-black text-indigo-600 mb-2">EL PROFETA</h2>
+                        ) : (
+                            <h2 className="text-2xl font-black text-indigo-600 mb-2">DISCÍPULO</h2>
+                        )}
+
+                        {gameData.players[currentRevealIndex].specialRole === 'etiope' ? (
+                            <div className="mb-4">
+                                <p className="text-slate-600 text-sm">No sabés la palabra, pero debés descubrirla.</p>
+                                <p className="text-red-500 font-bold text-xs mt-1 bg-red-50 p-1 rounded">⚠️ No digas que sos Etíope.</p>
+                            </div>
+                        ) : (
+                            <p className="text-slate-600 text-sm mb-4">La palabra es:</p>
+                        )}
+
+                        <div className="bg-amber-100 border border-amber-300 px-4 py-3 rounded-lg w-full mb-2">
+                          <span className="text-xl font-black text-amber-800 block leading-tight">
+                              {gameData.players[currentRevealIndex].wordObj.term}
+                          </span>
+                          {gameData.players[currentRevealIndex].wordObj.ref && <span className="text-xs text-amber-700 mt-1 block italic">{gameData.players[currentRevealIndex].wordObj.ref}</span>}
+                        </div>
+                        
+                        {gameData.players[currentRevealIndex].specialRole === 'judas' && (
+                            <div className="bg-red-50 border border-red-200 p-2 rounded mt-2">
+                                <span className="text-xs text-red-800 block">Fariseos: {gameData.impostorsIndices.map(i => gameData.originalPlayers[i].name).join(', ')}</span>
+                            </div>
+                        )}
+                        {gameData.players[currentRevealIndex].specialRole === 'profeta' && (
+                            <div className="bg-indigo-50 border border-indigo-200 p-2 rounded mt-2 text-center">
+                                <span className="text-xs text-indigo-800 block font-bold mb-1">Visión Divina:</span>
+                                <span className="text-xs text-indigo-800 block">Fariseos: {gameData.impostorsIndices.map(i => gameData.originalPlayers[i].name).join(', ')}</span>
+                                <span className="text-[10px] text-red-500 font-bold block mt-1 bg-red-50 p-1 rounded">⚠️ NO PUEDES REVELAR TU ROL</span>
+                            </div>
+                        )}
+
+                        <div className="bg-slate-100 px-2 py-1 rounded w-full">
+                            <span className="text-slate-400 text-[10px] font-bold uppercase">Categoría: {gameData.categoryName}</span>
+                        </div>
+                      </>
+                    )}
+
+                    <div className="mt-auto w-full pt-4">
+                      <Button onClick={nextReveal} variant="primary" className="py-2 text-sm">
+                        <EyeOff size={16} /> Entendí, Ocultar
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- PANTALLA 2.5: PREVIA --- */}
+        {gameState === 'pre-game' && (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] animate-in zoom-in duration-300 text-center px-6">
+                
+                {vigiliaModeEnabled && (
+                    <div className="mb-4 bg-amber-500 text-white px-4 py-1 rounded-full font-bold text-xs uppercase shadow-lg flex items-center gap-2">
+                        <Flame size={12}/> Ronda de Vigilia
+                    </div>
+                )}
+
+                <HelpCircle size={64} className="text-indigo-400 mb-4" />
+                <h2 className="text-3xl font-black text-white mb-2">¿Listos?</h2>
+                <div className="mb-6">
+                    <span className="text-indigo-300 text-xs font-bold uppercase tracking-widest">Modo Activo</span>
+                    <h3 className="text-xl font-bold text-white">{getActiveMode().label}</h3>
+                </div>
+                
+                {gameData.specialRoleIndices.zacarias !== -1 && (
+                     <div className="bg-purple-900/50 p-4 rounded-lg mb-4 border border-purple-500 w-full">
+                         <h3 className="text-purple-300 font-bold uppercase text-xs">Modo Zacarías</h3>
+                         <p className="text-white font-bold text-lg">
+                             <MicOff className="inline mr-2" size={18}/>
+                             {gameData.players[gameData.specialRoleIndices.zacarias].name} está mudo.
+                         </p>
+                     </div>
+                )}
+                {gameData.specialRoleIndices.sumo !== -1 && (
+                     <div className="bg-amber-900/50 p-4 rounded-lg mb-4 border border-amber-500 w-full">
+                         <h3 className="text-amber-300 font-bold uppercase text-xs">Sumo Sacerdote</h3>
+                         <p className="text-white font-bold text-lg">
+                             <Crown className="inline mr-2" size={18}/>
+                             {gameData.players[gameData.specialRoleIndices.sumo].name} dirige el debate.
+                         </p>
+                     </div>
+                )}
+
+                <div className="text-slate-400 text-sm mb-8 bg-slate-800 p-3 rounded-lg border border-slate-700 w-full">
+                    <span className="block text-indigo-400 font-bold text-xs uppercase mb-1">Instrucción</span>
+                    {gameData.modeId === 'escribas' ? "Nadie habla. Dibujá una pista relacionada a tu palabra." : 
+                     gameData.modeId === 'espadeo' ? "Citá o parafraseá un versículo relacionado a tu palabra." : 
+                     "Cada uno tiene que decir una palabra relacionada con lo que le tocó."}
+                </div>
+
+                <Button onClick={beginDebate} variant="secondary" className="text-xl py-4">
+                    QUE COMIENCE EL ESCUDRIÑO
+                </Button>
+            </div>
+        )}
+
+        {/* --- PANTALLA 3: JUGANDO --- */}
+        {gameState === 'playing' && (
+          <div className="space-y-6 animate-in fade-in duration-500 mt-4">
+            
+            <div className="text-center relative">
+               {timerEnabled ? (
+                    <div className="inline-flex flex-col items-center justify-center w-40 h-40 rounded-full border-4 border-slate-700 bg-slate-800 shadow-inner mb-4">
+                        <div className={`text-5xl font-black tabular-nums tracking-tighter ${timeLeft < 30 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+                            {formatTime(timeLeft)}
+                        </div>
+                        <span className="text-xs text-slate-500 uppercase font-bold mt-1">Tiempo Restante</span>
+                    </div>
+               ) : (
+                   <div className="mb-8">
+                       <Clock size={48} className="mx-auto text-slate-600 mb-2"/>
+                       <span className="text-slate-400 font-bold">Tiempo Libre</span>
+                   </div>
+               )}
+
+               <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700 mx-4">
+                <span className="text-slate-400 text-[10px] uppercase tracking-wider block mb-1">La ronda comienza con</span>
+                <span className="text-xl font-bold text-amber-400">{gameData.starterName}</span>
+              </div>
+            </div>
+
+            <div className="bg-slate-800 rounded-lg p-4 mx-2 text-center border border-slate-700">
+               {showCategoryToImpostor ? (
+                  <>
+                    <h3 className="text-slate-500 text-xs uppercase font-bold mb-1">Categoría</h3>
+                    <p className="text-xl font-bold text-white">{gameData.categoryName}</p>
+                  </>
+               ) : (
+                   <p className="text-slate-500 text-sm italic">Categoría oculta para evitar soplos</p>
+               )}
+            </div>
+
+            <div className="space-y-2 px-4 relative">
+                <div className="w-full">
+                    <Button onClick={() => setGameState('vote')} variant="danger" className="py-4 text-lg shadow-lg shadow-red-900/50">
+                        <Gavel size={24} /> {timeLeft === 0 && timerEnabled ? '¡TIEMPO! A VOTAR' : 'VOTAR AHORA'}
+                    </Button>
+                </div>
+                <p className="text-center text-slate-500 text-[10px]">
+                    Presioná cuando {timerEnabled ? 'el tiempo acabe o ' : ''}crean haber encontrado al infiltrado.
+                </p>
+            </div>
+          </div>
+        )}
+
+        {/* --- PANTALLA 4: VOTACIÓN --- */}
+        {gameState === 'vote' && (
+             <div className="animate-in slide-in-from-bottom duration-300 pt-4">
+                 <h2 className="text-center text-2xl font-bold text-white mb-2">¿Quién es el Fariseo?</h2>
+                 <p className="text-center text-slate-400 text-sm mb-6">Tocá al sospechoso para expulsarlo.</p>
+                 
+                 <div className="grid gap-3 max-h-[60vh] overflow-y-auto">
+                     {gameData.players.map(p => (
+                         !p.isDead && (
+                             <button 
+                                key={p.id}
+                                onClick={() => ejectPlayer(p.id)}
+                                className="bg-slate-800 hover:bg-slate-700 border border-slate-600 p-4 rounded-xl flex items-center justify-between group transition-all"
+                             >
+                                 <span className="font-bold text-lg">{p.name}</span>
+                                 <div className="bg-red-500/10 p-2 rounded-full group-hover:bg-red-500 group-hover:text-white transition-colors text-red-500">
+                                     <Gavel size={20} />
+                                 </div>
+                             </button>
+                         )
+                     ))}
+                 </div>
+                 <div className="mt-6">
+                    <Button onClick={() => setGameState('playing')} variant="outline" className="bg-transparent border-slate-600 text-slate-400">
+                        Cancelar, seguir debatiendo
+                    </Button>
+                 </div>
+             </div>
+        )}
+
+        {/* --- PANTALLA 5: RESULTADO RONDA (ARMAGEDÓN) --- */}
+        {gameState === 'round-result' && (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center animate-in zoom-in duration-300 px-4">
+                 <div className="mb-6">
+                    {gameData.lastEjected.role === 'faithful' ? (
+                        <div className="text-green-500 bg-green-500/10 p-4 rounded-full inline-block mb-4"><UserMinus size={48}/></div>
+                    ) : (
+                        <div className="text-red-500 bg-red-500/10 p-4 rounded-full inline-block mb-4"><PriestIcon /></div>
+                    )}
+                    <h2 className="text-3xl font-bold text-white mb-2">{gameData.lastEjected.name}</h2>
+                    <p className="text-xl text-slate-300">
+                        era <span className={gameData.lastEjected.role === 'faithful' ? 'text-green-400 font-bold' : 'text-red-500 font-bold'}>
+                            {gameData.lastEjected.role === 'faithful' ? 'un Discípulo Fiel' : 'el Fariseo'}
+                        </span>
+                    </p>
+                 </div>
+                 
+                 <p className="text-slate-400 mb-8 bg-slate-800 p-3 rounded text-sm">
+                     {gameData.lastEjected.role === 'faithful' 
+                        ? "¡Echaron a un inocente! El Fariseo sigue entre nosotros..." 
+                        : "¡Lo atraparon! Pero... ¿quedan más?"}
+                 </p>
+
+                 <Button onClick={continueArmageddon} variant="primary">
+                     <ChevronRight size={20} /> Siguiente Ronda
+                 </Button>
+            </div>
+        )}
+
+        {/* --- PANTALLA 6: RESULTADO FINAL --- */}
+        {(gameState === 'result-faithful' || gameState === 'result-impostor') && (
+          <div className="space-y-6 animate-in zoom-in duration-300 pt-6">
+             
+             {gameState === 'result-faithful' ? (
+                 <div className="text-center">
+                     <h2 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-600 mb-2">¡VICTORIA!</h2>
+                     <p className="text-white font-medium">El rebaño está a salvo.</p>
+                 </div>
+             ) : (
+                 <div className="text-center">
+                     <h2 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-orange-600 mb-2">¡AY DE VOSOTROS!</h2>
+                     <p className="text-white font-medium">Los Fariseos ganaron.</p>
+                 </div>
+             )}
+
+             <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 text-center relative overflow-hidden">
+                <div className="relative z-10">
+                    <h3 className="text-indigo-300 text-xs uppercase tracking-widest font-bold mb-2">La palabra era</h3>
+                    <div className="bg-slate-900 rounded-lg py-3 px-4 mb-4 inline-block">
+                        <span className="text-2xl font-black text-white block">
+                            {gameData.modeId === 'babel' ? '¡Eran distintas!' : gameData.players[0].wordObj.term}
+                        </span>
+                    </div>
+
+                    <div className="space-y-2 text-left">
+                        <h3 className="text-slate-500 text-xs uppercase font-bold border-b border-slate-700 pb-1">Roles Revelados</h3>
+                        <div className="max-h-48 overflow-y-auto">
+                            {gameData.players.map(p => (
+                                <div key={p.id} className={`flex justify-between items-center text-sm p-2 rounded ${p.role === 'impostor' ? 'bg-red-500/10 text-red-200' : 'text-slate-300'}`}>
+                                    <span className={p.isDead ? 'line-through opacity-50' : ''}>{p.name}</span>
+                                    <span className="font-bold text-xs uppercase flex items-center gap-1">
+                                        {p.role === 'impostor' ? 'Fariseo' : 'Fiel'}
+                                        {p.specialRole === 'judas' && ' (Judas)'}
+                                        {p.specialRole === 'etiope' && ' (Etíope)'}
+                                        {p.specialRole === 'profeta' && ' (Profeta)'}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+             </div>
+
+             {/* VIGILIA STATS */}
+             {vigiliaModeEnabled && Object.keys(partyStats).length > 0 && (
+                 <div className="bg-amber-100 rounded-xl p-4 border-2 border-amber-300 mt-4 shadow-lg animate-in slide-in-from-bottom">
+                     <div className="flex items-center justify-center gap-2 mb-3 border-b border-amber-200 pb-2">
+                         <Trophy size={20} className="text-amber-600" />
+                         <h3 className="font-black text-amber-800 uppercase tracking-widest text-sm">Tabla Vigilia</h3>
+                         <div className="ml-auto bg-amber-200 px-2 py-1 rounded text-[10px] font-bold text-amber-800">
+                             Rondas: {vigiliaRounds}
+                         </div>
+                         <button onClick={() => setShowResetStatsConfirm(true)} className="text-[10px] text-red-600 bg-red-100 px-2 py-1 rounded hover:bg-red-200 border border-red-200 flex items-center gap-1"><RefreshCw size={10}/> Reset</button>
+                     </div>
+                     <div className="overflow-x-auto">
+                         <table className="w-full text-xs text-left">
+                             <thead>
+                                 <tr className="text-amber-700 border-b border-amber-200">
+                                     <th className="pb-1 pl-1">Jugador</th>
+                                     <th className="pb-1 text-center">Victorias</th>
+                                     <th className="pb-1 text-center">Engaños</th>
+                                     <th className="pb-1 text-center">Martirios</th>
+                                 </tr>
+                             </thead>
+                             <tbody className="text-amber-900 font-bold">
+                                 {players.map(p => {
+                                     const stats = partyStats[p.id] || { faithfulWins: 0, impostorWins: 0, ejected: 0 };
+                                     return (
+                                         <tr key={p.id} className="border-b border-amber-200/50 last:border-none">
+                                             <td className="py-1 pl-1">{p.name}</td>
+                                             <td className="py-1 text-center text-green-700">{stats.faithfulWins}</td>
+                                             <td className="py-1 text-center text-red-600">{stats.impostorWins}</td>
+                                             <td className="py-1 text-center text-slate-500">{stats.ejected}</td>
+                                         </tr>
+                                     );
+                                 })}
+                             </tbody>
+                         </table>
+                     </div>
+                 </div>
+             )}
+
+             <div className="grid grid-cols-2 gap-3 pt-4">
+               <Button onClick={() => startGame(null)} variant="primary">
+                 ¡Otra Ronda!
+               </Button>
+               <Button onClick={handleReset} variant="outline" className="bg-transparent text-slate-200 border-slate-500 hover:bg-slate-800 hover:text-white">
+                 Cambiar ajustes
+               </Button>
+             </div>
+          </div>
+        )}
+
+      </main>
+    </div>
+  );
+}
