@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 
 // --- CONFIGURACIÓN GEMINI API ---
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY || ""; 
+const apiKey = import.meta.env.MENTE_API || ""; 
 
 // Helper para llamar a Gemini (Solo se usa para generación de categorías nuevas o pistas de contexto)
 const callGemini = async (prompt, isJson = false) => {
@@ -2141,3 +2141,4 @@ export default function App() {
   );
 
 }
+
