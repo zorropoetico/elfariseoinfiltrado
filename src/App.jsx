@@ -4,38 +4,10 @@ import {
     Settings, BookOpen, Info, Volume2, VolumeX,
     HelpCircle, ChevronRight, Gavel, X, Clock, ExternalLink,
     Crown, MicOff, Edit3, ScrollText, Sword, ChevronLeft, Music,
-    Sparkles, Trophy, AlertTriangle, Flame, PlusCircle, Trash2, Save, Upload, RefreshCw, LogOut, Loader2, CheckSquare, Square, PenLine, ClipboardCopy, CheckCircle, XCircle, Copy, Download, Instagram, FileJson, FileUp
+    Trophy, AlertTriangle, Flame, PlusCircle, Trash2, Save, Upload, RefreshCw, LogOut, CheckSquare, Square, PenLine, ClipboardCopy, CheckCircle, XCircle, Copy, Download, Instagram, FileJson, FileUp
 } from 'lucide-react';
 
-// --- CONFIGURACIÓN GEMINI API ---
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "";
 
-// Helper para llamar a Gemini (Solo se usa para generación de categorías nuevas o pistas de contexto)
-const callGemini = async (prompt, isJson = false) => {
-    try {
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: {
-                        responseMimeType: isJson ? "application/json" : "text/plain"
-                    }
-                })
-            }
-        );
-
-        if (!response.ok) throw new Error('Error en API');
-        const data = await response.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        return isJson ? JSON.parse(text) : text;
-    } catch (error) {
-        console.error("Gemini Error:", error);
-        return null;
-    }
-};
 
 // --- AUDIO ENGINE ---
 let audioCtx = null;
@@ -219,386 +191,490 @@ const GAME_MODES = [
 ];
 
 // --- DATA: Categorías Completas ---
-const createWord = (term, ref, content, clue, active = true) => ({ term, ref, content, clue, active });
+const createWord = (term, ref, faithfulClue, impostorClue, active = true) => ({ term, ref, faithfulClue, impostorClue, active });
 
 const BASE_CATEGORIES = {
-    libros: {
-        id: 'libros', name: 'Libros Biblia', level: 'easy', words: [
-            createWord('Génesis', 'Génesis 1:1', 'En el principio creó Dios los cielos y la tierra.', 'El comienzo de la historia.'),
-            createWord('Salmos', 'Salmos 23:1', 'El Señor es mi pastor, nada me faltará.', 'Cánticos y poesías para el alma.'),
-            createWord('Mateo', 'Mateo 1:1', 'Libro de la genealogía de Jesucristo.', 'El primer evangelio, escrito por un recaudador.'),
-            createWord('Apocalipsis', 'Apocalipsis 1:1', 'La revelación de Jesucristo.', 'El libro del fin de los tiempos.'),
-            createWord('Éxodo', 'Éxodo 20:1', 'Y habló Dios todas estas palabras.', 'Salida de la esclavitud.'),
-            createWord('Proverbios', 'Proverbios 1:7', 'El temor del Señor es el principio de la sabiduría.', 'Consejos sabios para la vida.'),
-            createWord('Hechos', 'Hechos 1:8', 'Pero recibiréis poder...', 'Historia de la iglesia primitiva.'),
-            createWord('Romanos', 'Romanos 1:16', 'No me avergüenzo del evangelio.', 'Carta doctrinal de Pablo a la capital.'),
-            createWord('Jonás', 'Jonás 1:17', 'Y el Señor dispuso un gran pez.', 'Un profeta rebelde y un gran pez.'),
-            createWord('Daniel', 'Daniel 6:22', 'Mi Dios envió su ángel.', 'Foso de leones y sueños.'),
-            createWord('Isaías', 'Isaías 9:6', 'Porque un niño nos ha nacido.', 'El profeta mesiánico por excelencia.'),
-            createWord('Lucas', 'Lucas 19:10', 'El Hijo del Hombre vino a buscar...', 'Evangelio detallado, escrito por un médico.'),
-            createWord('Juan', 'Juan 3:16', 'Porque de tal manera amó Dios al mundo.', 'El discípulo amado cuenta su historia.'),
-            createWord('1 Corintios', '1 Cor. 13:13', 'El amor nunca deja.', 'Carta a una iglesia con muchos problemas.'),
-            createWord('Efesios', 'Efesios 2:8', 'Por gracia sois salvos.', 'La armadura de Dios está aquí.'),
-            createWord('Levítico', 'Levítico 19:18', 'Amarás a tu prójimo...', 'Leyes, sacrificios y santidad.'),
-            createWord('Deuteronomio', 'Deut. 6:4', 'Oye, Israel: Jehová nuestro Dios...', 'Segunda ley, recordando el pacto.'),
-            createWord('Josué', 'Josué 1:9', 'Esfuérzate y sé valiente.', 'Conquista de la Tierra Prometida.'),
-            createWord('Jueces', 'Jueces 21:25', 'Cada uno hacía lo que le parecía.', 'Líderes militares y ciclos de pecado.'),
-            createWord('Rut', 'Rut 1:16', 'Tu pueblo será mi pueblo.', 'Historia de redención en los campos de cebada.'),
-            createWord('Eclesiastés', 'Ecl. 3:1', 'Todo tiene su tiempo.', 'Vanidad de vanidades, todo es vanidad.'),
-            createWord('Cantares', 'Cant. 2:16', 'Mi amado es mío.', 'Poema de amor y pasión.'),
-            createWord('Jeremías', 'Jer. 29:11', 'Planes de bienestar.', 'El profeta llorón.'),
-            createWord('Ezequiel', 'Eze. 37:4', 'Huesos secos, oíd palabra de Jehová.', 'Visiones extrañas y ruedas de fuego.')
-        ]
-    },
-    oficios: {
-        id: 'oficios', name: 'Oficios', level: 'easy', words: [
-            createWord('Pastor', 'Salmos 23:1', 'El Señor es mi pastor.', 'Cuida del rebaño.'),
-            createWord('Pescador', 'Mateo 4:19', 'Os haré pescadores de hombres.', 'Trabaja en el mar o lago.'),
-            createWord('Carpintero', 'Marcos 6:3', '¿No es este el carpintero?', 'Trabaja con madera, como Jesús.'),
-            createWord('Rey', '1 Samuel 8:5', 'Constitúyenos un rey.', 'Gobierna con corona.'),
-            createWord('Sacerdote', 'Hebreos 4:14', 'Gran sumo sacerdote.', 'Intercede ante Dios por el pueblo.'),
-            createWord('Profeta', 'Deut. 18:18', 'Un profeta levantaré.', 'Habla de parte de Dios.'),
-            createWord('Soldado', '2 Tim. 2:3', 'Buen soldado de Jesucristo.', 'Lucha en batallas.'),
-            createWord('Sembrador', 'Mateo 13:3', 'El sembrador salió a sembrar.', 'Planta semillas en la tierra.'),
-            createWord('Recaudador', 'Lucas 5:27', 'Leví sentado en la oficina.', 'Cobra impuestos, mal visto.'),
-            createWord('Fariseo', 'Lucas 18:11', 'El fariseo oraba consigo mismo.', 'Religioso estricto y legalista.'),
-            createWord('Escriba', 'Esdras 7:6', 'Escriba diligente.', 'Experto en copiar la ley.'),
-            createWord('Centurión', 'Mateo 8:5', 'Hombre bajo autoridad.', 'Oficial romano al mando de 100.'),
-            createWord('Juez', 'Jueces 2:16', 'Jehová levantó jueces.', 'Líder que impartía justicia antes de los reyes.'),
-            createWord('Copero', 'Nehemías 1:11', 'Yo era copero del rey.', 'Sirve vino al rey y prueba la bebida.'),
-            createWord('Panadero', 'Génesis 40:1', 'El panadero del rey.', 'Hace pan y hornea.'),
-            createWord('Alfarero', 'Jeremías 18:6', 'Barro en manos del alfarero.', 'Moldea barro para hacer vasijas.'),
-            createWord('Médico', 'Colosenses 4:14', 'Lucas, el médico amado.', 'Cura a los enfermos.'),
-            createWord('Tiendero', 'Hechos 18:3', 'Oficio de hacer tiendas.', 'Fabrica carpas, como Pablo.')
-        ]
-    },
-    animales: {
-        id: 'animales', name: 'Animales', level: 'easy', words: [
-            createWord('Oveja', 'Isaías 53:7', 'Como oveja fue llevado al matadero.', 'Animal que necesita pastor.'),
-            createWord('León', '1 Pedro 5:8', 'León rugiente.', 'Rey de la selva, peligroso.'),
-            createWord('Serpiente', 'Génesis 3:1', 'Más astuta que todos.', 'Engañó a Eva en el huerto.'),
-            createWord('Paloma', 'Mateo 3:16', 'Descendía como paloma.', 'Símbolo de paz y del Espíritu.'),
-            createWord('Burro', 'Números 22:28', 'Habló a Balaam.', 'Animal de carga, habló una vez.'),
-            createWord('Pez', 'Jonás 1:17', 'Un gran pez.', 'Tragó a un profeta.'),
-            createWord('Camello', 'Mateo 19:24', 'Ojo de una aguja.', 'Animal del desierto con joroa.'),
-            createWord('Lobo', 'Mateo 7:15', 'Lobos rapaces.', 'Enemigo de las ovejas.'),
-            createWord('Águila', 'Isaías 40:31', 'Alas como de águila.', 'Vuela alto y renueva sus fuerzas.'),
-            createWord('Oso', '2 Reyes 2:24', 'Salieron dos osas.', 'Animal fuerte del bosque.'),
-            createWord('Cuervo', '1 Reyes 17:4', 'Los cuervos te sustenten.', 'Ave negra que alimentó a Elías.'),
-            createWord('Cabra', 'Mateo 25:32', 'Ovejas de los cabritos.', 'Animal similar a la oveja, pero más terco.'),
-            createWord('Langosta', 'Marcos 1:6', 'Comía langostas.', 'Plaga de Egipto y comida de Juan.'),
-            createWord('Rana', 'Éxodo 8:2', 'Plaga de ranas.', 'Animal anfibio que croa.'),
-            createWord('Escorpión', 'Lucas 10:19', 'Serpientes y escorpiones.', 'Arácnido con aguijón venenoso.'),
-            createWord('Zorra', 'Lucas 13:32', 'Decidle a ese zorro.', 'Animal astuto, Jesús llamó así a Herodes.'),
-            createWord('Mula', 'Salmos 32:9', 'Como el mulo sin entendimiento.', 'Híbrido de carga.'),
-            createWord('Hormiga', 'Proverbios 6:6', 'Mira la hormiga.', 'Trabajadora incansable.'),
-            createWord('Perro', 'Proverbios 26:11', 'Perro que vuelve al vómito.', 'Fiel amigo o animal impuro.'),
-            createWord('Ballena', 'Mateo 12:40', 'Vientre del gran pez (ballena).', 'Mamífero marino gigante.')
-        ]
-    },
-    objetos: {
-        id: 'objetos', name: 'Objetos', level: 'easy', words: [
-            createWord('Arca del Pacto', 'Éxodo 25:10', 'Arca de madera de acacia.', 'Caja dorada muy sagrada.'),
-            createWord('Cruz', 'Hebreos 12:2', 'Soportó la cruz.', 'Instrumento de ejecución romana.'),
-            createWord('Copa', 'Lucas 22:20', 'Esta copa es el nuevo pacto.', 'Recipiente para beber vino.'),
-            createWord('Túnica', 'Génesis 37:3', 'Túnica de colores.', 'Prenda de vestir larga y sin costuras.'),
-            createWord('Corona', 'Apocalipsis 2:10', 'Corona de la vida.', 'Símbolo de realeza en la cabeza.'),
-            createWord('Red', 'Lucas 5:4', 'Echad vuestras redes.', 'Herramienta de pescador.'),
-            createWord('Lámpara', 'Salmos 119:105', 'Lámpara es a mis pies.', 'Da luz en la oscuridad.'),
-            createWord('Piedra', '1 Samuel 17:49', 'Una piedra y la honda.', 'Roca pequeña o angular.'),
-            createWord('Vara', 'Números 17:8', 'La vara de Aarón.', 'Palo de madera usado por pastores.'),
-            createWord('Tablas Ley', 'Éxodo 31:18', 'Tablas de piedra.', 'Donde se escribieron los mandamientos.'),
-            createWord('Menorá', 'Éxodo 25:31', 'Candelabro de oro.', 'Candelabro de siete brazos.'),
-            createWord('Honda', '1 Samuel 17:40', 'Honda en su mano.', 'Arma para lanzar piedras.'),
-            createWord('Manto', '2 Reyes 2:13', 'Manto de Elías.', 'Capa exterior de ropa.'),
-            createWord('Trompeta', 'Josué 6:5', 'Sonido de bocina.', 'Instrumento de viento para anunciar.'),
-            createWord('Arpa', '1 Samuel 16:23', 'David tomaba el arpa.', 'Instrumento de cuerdas.'),
-            createWord('Altar', 'Génesis 8:20', 'Edificó un altar.', 'Mesa para sacrificios.'),
-            createWord('Incienso', 'Salmos 141:2', 'Como incienso delante de ti.', 'Aroma agradable al quemarse.'),
-            createWord('Aceite', 'Santiago 5:14', 'Ungiéndole con aceite.', 'Líquido para ungir o cocinar.'),
-            createWord('Pan', 'Juan 6:35', 'Pan de vida.', 'Alimento básico de harina.'),
-            createWord('Espada', 'Hebreos 4:12', 'Más cortante que espada.', 'Arma de filo para la guerra.')
-        ]
-    },
+    // --- PERSONAJES ---
     vida_jesus: {
-        id: 'vida_jesus', name: 'Vida de Jesús', level: 'easy', words: [
-            createWord('Jesús', 'Mateo 1:21', 'Salvará a su pueblo.', 'El Salvador del mundo.'),
-            createWord('Pesebre', 'Lucas 2:7', 'Le acostó en un pesebre.', 'Cama para animales, primer cuna.'),
-            createWord('Bautismo', 'Marcos 1:9', 'Bautizado en el Jordán.', 'Sumergirse en agua.'),
-            createWord('Tentación', 'Mateo 4:1', 'Tentado en el desierto.', 'Prueba del diablo.'),
-            createWord('Transfiguración', 'Mateo 17:2', 'Se transfiguró.', 'Cambio de apariencia glorioso.'),
-            createWord('Última Cena', 'Lucas 22:15', 'Comer esta Pascua.', 'Comida final con los 12.'),
-            createWord('Crucifixión', 'Juan 19:18', 'Le crucificaron.', 'Muerte en madero.'),
-            createWord('Resurrección', 'Lucas 24:6', 'Ha resucitado.', 'Volver a la vida.'),
-            createWord('Ascensión', 'Hechos 1:9', 'Fue alzado.', 'Subir al cielo.'),
-            createWord('Pedro', 'Mateo 16:18', 'Sobre esta roca.', 'Pescador impulsivo, negó 3 veces.'),
-            createWord('Juan', 'Juan 13:23', 'El que Jesús amaba.', 'El discípulo amado.'),
-            createWord('Jacobo', 'Mateo 4:21', 'Hijo de Zebedeo.', 'Hermano de Juan, primer mártir.'),
-            createWord('Andrés', 'Juan 1:40', 'Hermano de Simón.', 'Trajo a Pedro a Jesús.'),
-            createWord('Felipe', 'Juan 1:43', 'Halló a Felipe.', 'De Betsaida, como Pedro.'),
-            createWord('Bartolomé', 'Mateo 10:3', 'Felipe y Bartolomé.', 'Probablemente Natanael.'),
-            createWord('Mateo', 'Mateo 9:9', 'Llamado Leví.', 'Recaudador que siguió a Jesús.'),
-            createWord('Tomás', 'Juan 20:27', 'Pon aquí tu dedo.', 'Dudó hasta ver.'),
-            createWord('Santiago Alfeo', 'Marcos 3:18', 'Hijo de Alfeo.', 'El otro Jacobo.'),
-            createWord('Tadeo', 'Mateo 10:3', 'Lebeo por sobrenombre.', 'Judas no el Iscariote.'),
-            createWord('Simón Zelote', 'Lucas 6:15', 'Llamado Zelote.', 'Pertenecía a un grupo rebelde.'),
-            createWord('Judas Iscariote', 'Lucas 22:48', 'Con un beso entregas.', 'El traidor.'),
-            createWord('Lázaro', 'Juan 11:43', '¡Ven fuera!', 'Resucitó tras 4 días.'),
-            createWord('Marta', 'Lucas 10:41', 'Afanada y turbada.', 'Hermana trabajadora de Lázaro.'),
-            createWord('María', 'Lucas 10:42', 'La buena parte.', 'Hermana adoradora de Lázaro.'),
-            createWord('Zaqueo', 'Lucas 19:5', 'Baja del árbol.', 'Cobrador bajito que subió al sicómoro.'),
-            createWord('Nicodemo', 'Juan 3:4', 'Maestro de Israel.', 'Vino a Jesús de noche.'),
-            createWord('Pilato', 'Mateo 27:24', 'Se lavó las manos.', 'Gobernador romano que lo condenó.'),
-            createWord('Caifás', 'Juan 11:49', 'Sumo Sacerdote.', 'Líder religioso que conspiró.'),
-            createWord('Barrabás', 'Marcos 15:15', 'Les soltó a Barrabás.', 'Criminal liberado en lugar de Jesús.'),
-            createWord('Centurión', 'Marcos 15:39', 'Hijo de Dios.', 'Soldado al pie de la cruz.'),
-            createWord('Samaritana', 'Juan 4:7', 'Mujer de Samaria.', 'Jesús le pidió agua en el pozo.'),
-            createWord('José Arimatea', 'Marcos 15:43', 'Pidió el cuerpo.', 'Prestó su tumba nueva.'),
-            createWord('Simón Cirene', 'Lucas 23:26', 'Cargó la cruz.', 'Ayudó a Jesús con el madero.')
+        id: 'vida_jesus', name: 'Vida de Jesús', type: 'personajes', words: [
+            createWord('Jesús', 'Mateo 1:21', 'El ángel le dijo a José que le pusiera este nombre porque Él salvaría a su pueblo de sus pecados.', 'Protagonista'),
+            createWord('Pedro', 'Mateo 14:29', 'Pescador, negó a Jesús 3 veces y caminó sobre el agua.', 'Caminó sobre algo inestable.'),
+            createWord('Judas Iscariote', 'Mateo 26:14-16', 'Traicionó a Jesús por 30 monedas de plata.', 'Manejaba la plata del grupo.'),
+            createWord('Poncio Pilato', 'Mateo 27:24', 'Gobernador romano que condenó a Jesús cediendo a la presión.', 'Se lavó las manos en público.'),
+            createWord('Nicodemo', 'Juan 3:1-2', 'Fariseo que preguntó cómo se puede nacer de nuevo.', 'Iba de visita solo de noche.'),
+            createWord('Zaqueo', 'Lucas 19:4', 'Publicano bajito, devolvió cuadruplicado lo robado tras ver a Jesús.', 'Se subió a un árbol.'),
+            createWord('Lázaro', 'Juan 11:43-44', 'Hermano de Marta y María, Jesús lo resucitó tras 4 días.', 'Salió envuelto en vendas.'),
+            createWord('Bartimeo', 'Marcos 10:46', 'Ciego en Jericó que recuperó la vista por su fe.', 'Gritó mucho al costado del camino.'),
+            createWord('La mujer samaritana', 'Juan 4:7-18', 'Tuvo 5 maridos y habló con Jesús junto al pozo de Jacob.', 'Fue a buscar agua al mediodía.'),
+            createWord('Jairo', 'Marcos 5:22', 'Jefe de la sinagoga, Jesús resucitó a su hija de 12 años.', 'Su hija estaba muy enferma.'),
+            createWord('El joven rico', 'Mateo 19:21-22', 'Cumplía la ley pero no quiso vender sus bienes para seguir a Jesús.', 'Se fue triste de una reunión.'),
+            createWord('Malco', 'Juan 18:10', 'Siervo del sumo sacerdote, Pedro lo hirió y Jesús lo sanó.', 'Perdió una oreja en una pelea.'),
+            createWord('Simón de Cirene', 'Lucas 23:26', 'Ayudó a Jesús a cargar la cruz camino al Gólgota.', 'Le obligaron a cargar algo pesado.'),
+            createWord('Barrabás', 'Mateo 27:16-26', 'Preso famoso (ladrón/homicida) liberado en lugar de Jesús.', 'Salió libre gracias a la gente.'),
+            createWord('Los Magos (Sabios)', 'Mateo 2:1-11', 'Vinieron del oriente con oro, incienso y mirra.', 'Siguieron una luz en el cielo.'),
+            createWord('Simeón', 'Lucas 2:25-30', 'Anciano en el templo que profetizó sobre el bebé Jesús.', 'No podía morir sin ver algo.'),
+            createWord('José de Arimatea', 'Mateo 27:57-60', 'Miembro noble del concilio, pidió el cuerpo de Jesús.', 'Prestó su propia tumba.'),
+            createWord('El ladrón en la cruz (Dimas)', 'Lucas 23:42-43', 'Reconoció a Jesús en la crucifixión: "Acuérdate de mí".', 'Se salvó en el último minuto.'),
+            createWord('La suegra de Pedro', 'Mateo 8:14-15', 'Jesús la sanó y ella se levantó a servirles.', 'Tenía mucha fiebre.'),
+            createWord('La mujer del flujo de sangre', 'Marcos 5:25-29', 'Gastó todo en médicos, sanó al tocar le manto de Jesús.', 'Tocó un borde de ropa.'),
+            createWord('El paralítico de Betesda', 'Juan 5:5-8', 'Estuvo enfermo 38 años, Jesús le dijo "Toma tu lecho y anda".', 'Esperaba que se moviera el agua.')
         ]
     },
-    profetas: {
-        id: 'profetas', name: 'Profetas', level: 'medium', words: [
-            createWord('Moisés', 'Deut 34', 'Libertador.', 'Sacó a Israel de Egipto.'),
-            createWord('Elías', '2 Rey 2', 'Carro de fuego.', 'Profeta de fuego, no murió.'),
-            createWord('Isaías', 'Isa 6', 'Santo, santo, santo.', 'Profeta de la corte, mesiánico.'),
-            createWord('Jeremías', 'Jer 1', 'No digas soy niño.', 'Profeta llorón.'),
-            createWord('Jonás', 'Jon 1', 'Huye a Tarsis.', 'Tragado por un pez.'),
-            createWord('Daniel', 'Dan 6', 'Foso de leones.', 'Interpretó sueños en Babilonia.'),
-            createWord('Samuel', '1 Sam 3', 'Habla que tu siervo oye.', 'Ungió a David y Saúl.'),
-            createWord('Juan Bautista', 'Mat 3', 'Voz en el desierto.', 'Precursor de Jesús, vestía piel.'),
-            createWord('David', 'Salmos', 'Dulce cantor.', 'Rey pastor y salmista.'),
-            createWord('Noé', 'Gen 6', 'Arca.', 'Construyó un barco gigante.'),
-            createWord('Eliseo', '2 Rey 2', 'Doble porción.', 'Sucesor de Elías, calvo.'),
-            createWord('Ezequiel', 'Eze 1', 'Ruedas.', 'Vio el valle de huesos secos.'),
-            createWord('Oseas', 'Os 1', 'Cásate con ramera.', 'Profeta del amor fiel de Dios.'),
-            createWord('Joel', 'Joel 1', 'Plaga de langostas.', 'Profetizó sobre el Espíritu Santo.'),
-            createWord('Amós', 'Am 1', 'Pastor de Tecoa.', 'Profeta de la justicia social.'),
-            createWord('Abdías', 'Abd 1', 'Contra Edom.', 'Libro más corto del AT.'),
-            createWord('Miqueas', 'Miq 1', 'Belén Efrata.', 'Profetizó lugar nacimiento Mesías.'),
-            createWord('Nahúm', 'Nah 1', 'Contra Nínive.', 'Profecía sobre la caída de Nínive.'),
-            createWord('Habacuc', 'Hab 1', 'Justo por fe vivirá.', 'Cuestionó a Dios desde la torre.'),
-            createWord('Sofonías', 'Sof 1', 'Día de Jehová.', 'Profecía del día del juicio.'),
-            createWord('Hageo', 'Hag 1', 'Reedificad la casa.', 'Animó a reconstruir el templo.'),
-            createWord('Zacarías', 'Zac 1', 'No con fuerza.', 'Profeta de visiones y reconstrucción.'),
-            createWord('Malaquías', 'Mal 1', 'El mensajero.', 'Último profeta del AT.'),
-            createWord('Natán', '2 Sam 12', 'Tú eres aquel hombre.', 'Confrontó a David.'),
-            createWord('Gad', '1 Sam 22', 'Vidente de David.', 'Ofreció tres castigos a David.'),
-            createWord('Balaam', 'Num 22', 'Asna habló.', 'Profeta mercenario, su burra le habló.'),
-            createWord('Débora', 'Jue 4', 'Jueza y profetisa.', 'Madre en Israel, bajo la palmera.'),
-            createWord('Ana', 'Luc 2', 'Profetisa en templo.', 'Oraba y ayunaba esperando al niño.'),
-            createWord('Agabo', 'Hech 11', 'Ató sus manos.', 'Predijo hambre y prisión de Pablo.')
+    enemigos: {
+        id: 'enemigos', name: 'Enemigos de Dios', type: 'personajes', words: [
+            createWord('Faraón (del Éxodo)', 'Éxodo 7-14', 'No dejaba ir al pueblo, sufrió las 10 plagas.', 'Se le endureció el corazón.'),
+            createWord('Goliat', '1 Samuel 17', 'Gigante filisteo derrotado por una piedra de honda.', 'Se burló de un ejército entero.'),
+            createWord('Herodes el Grande', 'Mateo 2:16', 'Rey que intentó matar a Jesús niño en Belén.', 'Mandó matar bebés.'),
+            createWord('Herodes Antipas', 'Marcos 6:21-27', 'Decapitó a Juan el Bautista y se burló de Jesús.', 'Le pidió un baile a su hijastra.'),
+            createWord('Amán', 'Ester 3:5-6', 'Enemigo en el libro de Ester, construyó una horca para Mardoqueo.', 'Odiaba que no se arrodillaran ante él.'),
+            createWord('Sanbalat', 'Nehemías 4:1-3', 'Opositor principal de Nehemías en la reconstrucción del muro.', 'Se burlaba de los albañiles.'),
+            createWord('Absalón', '2 Samuel 18:9', 'Hijo de David que se rebeló e intentó usurpar el trono.', 'Quedó colgado por el pelo.'),
+            createWord('Adonías', '1 Reyes 1:5', 'Hijo de David que intentó reinar antes que Salomón.', 'Se autoproclamó rey antes de tiempo.'),
+            createWord('Atalía', '2 Reyes 11:1', 'Mató a todos sus nietos (menos a Joás) para reinar en Judá.', 'Una abuela asesina.'),
+            createWord('Sísara', 'Jueces 4:21', 'General cananeo derrotado por Débora y Barac, muerto por Jael.', 'Le clavaron una estaca durmiendo.'),
+            createWord('Satanás', 'Génesis 3 / Mateo 4', 'El acusador, tentó a Jesús y a Eva.', 'Se disfrazó de serpiente.'),
+            createWord('La Bestia (Anticristo)', 'Apocalipsis 13:1', 'Personaje de Apocalipsis que surge del mar y exige adoración.', 'Tenía un número famoso (666).'),
+            createWord('Simón el Mago', 'Hechos 8:18-19', 'Ofreció dinero a los apóstoles por el Espíritu Santo.', 'Quiso comprar el poder de Dios.'),
+            createWord('Elimas (Barjesús)', 'Hechos 13:8-11', 'Hechicero que estorbaba a Pablo en Chipre.', 'Quedó ciego por oponerse.'),
+            createWord('Senaquerib', '2 Reyes 18:13', 'Rey asirio que sitió Jerusalén en tiempos de Ezequías.', 'Envió cartas amenazantes.'),
+            createWord('Coré', 'Números 16:31-32', 'Levita que lideró una rebelión contra Moisés y Aarón.', 'La tierra se lo tragó.'),
+            createWord('Caín', 'Génesis 4:8', 'Mató a su hermano Abel por celos de su ofrenda.', 'El primer asesino.'),
+            createWord('Abimelec (hijo de Gedeón)', 'Jueces 9:5', 'Hijo de Gedeón que usurpó el poder en Siquem.', 'Mató a 70 hermanos sobre una piedra.'),
+            createWord('Nabal', '1 Samuel 25:25', 'Esposo grosero de Abigail, murió del corazón tras una borrachera.', 'Su nombre significa "necio".'),
+            createWord('Doeg edomita', '1 Samuel 22:18', 'Espía de Saúl que masacró a los sacerdotes de Nob.', 'Mató a los sacerdotes.')
         ]
     },
-    milagros: {
-        id: 'milagros', name: 'Milagros', level: 'medium', words: [
-            createWord('Agua en vino', 'Juan 2', 'Primer milagro en Caná.', 'Transformación de líquido en boda.'),
-            createWord('Mar Rojo', 'Éxodo 14', 'Se abrió en dos.', 'Paso en seco entre aguas.'),
-            createWord('Lázaro resucita', 'Juan 11', 'Lázaro ven fuera.', 'Resurrección tras cuatro días.'),
-            createWord('Panes y Peces', 'Mateo 14', 'Alimentación de los 5000.', 'Multiplicación de comida.'),
-            createWord('Caminar sobre agua', 'Mateo 14', 'Pedro se hundió.', 'Desafío a la gravedad en el mar.'),
-            createWord('Ciego Bartimeo', 'Marcos 10', 'Hijo de David ten misericordia.', 'Recuperó la vista en el camino.'),
-            createWord('Paralítico techo', 'Marcos 2', 'Bajado por amigos.', 'Entró por arriba de la casa.'),
-            createWord('Hija de Jairo', 'Marcos 5', 'Talita cumi.', 'Niña despierta de la muerte.'),
-            createWord('Mujer flujo sangre', 'Marcos 5', 'Tocó el manto.', 'Sanada al tocar el borde.'),
-            createWord('10 Leprosos', 'Lucas 17', 'Solo uno volvió.', 'Sanidad de piel, ingratitud.'),
-            createWord('Tempestad calmada', 'Marcos 4', 'Calla, enmudece.', 'Control del clima en la barca.'),
-            createWord('Moneda en pez', 'Mateo 17', 'Para el impuesto.', 'Dinero encontrado en la boca.'),
-            createWord('Higuera seca', 'Marcos 11', 'No dio fruto.', 'Árbol maldecido instantáneamente.'),
-            createWord('Oreja de Malco', 'Lucas 22', 'Pedro cortó, Jesús sanó.', 'Sanidad en el arresto.'),
-            createWord('Pesca milagrosa', 'Lucas 5', 'Redes se rompían.', 'Muchos peces tras una noche mala.'),
-            createWord('Muros de Jericó', 'Josué 6', 'Cayeron al gritar.', 'Paredes derrumbadas por sonido.'),
-            createWord('Sol detenido', 'Josué 10', 'Sol detente en Gabaón.', 'Día más largo de la historia.'),
-            createWord('Fuego del cielo', '1 Reyes 18', 'Elías en Carmelo.', 'Respuesta de Dios al sacrificio.'),
-            createWord('Naamán sanado', '2 Reyes 5', 'Lávate 7 veces.', 'Lepra curada en el Jordán.'),
-            createWord('Mano seca', 'Mateo 12', 'Extiende tu mano.', 'Sanidad en día de reposo.')
+    sacerdotes: {
+        id: 'sacerdotes', name: 'Sacerdotes y Religiosos', type: 'personajes', words: [
+            createWord('Aarón', 'Números 17:8', 'Primer Sumo Sacerdote, hermano de Moisés.', 'Su vara floreció.'),
+            createWord('Elí', '1 Samuel 4:18', 'Sumo sacerdote que crio a Samuel, tenía hijos perversos.', 'Se cayó de la silla y murió.'),
+            createWord('Finees', 'Números 25:7-8', 'Nieto de Aarón, celoso por Dios, ejecutó a una pareja inmoral.', 'Usó una lanza para detener una plaga.'),
+            createWord('Sadoc', '1 Reyes 1:39', 'Sacerdote que ungió a Salomón; su linaje fue el elegido.', 'Fiel a David en la rebelión.'),
+            createWord('Esdras', 'Esdras 7:6', 'Lideró el retorno del exilio y enseñó la Ley al pueblo.', 'Era escriba y sacerdote.'),
+            createWord('Zacarías (padre de Juan)', 'Lucas 1:20', 'Sacerdote que vio al ángel Gabriel en el santuario.', 'Se quedó mudo en el trabajo.'),
+            createWord('Caifás', 'Juan 11:49-50', 'Sumo sacerdote que presidió el juicio contra Jesús.', 'Dijo que convenía que muriera uno solo.'),
+            createWord('Anás', 'Juan 18:13', 'Ex sumo sacerdote, interrogaron a Jesús primero en su casa.', 'El suegro del jefe.'),
+            createWord('Melquisedec', 'Génesis 14:18', 'Rey de Salem y sacerdote, Abraham le dio los diezmos.', 'No tenía padre ni madre (en registro).'),
+            createWord('Joiada', '2 Reyes 11:4', 'Sacerdote que protegió al niño rey Joás y derrocó a Atalía.', 'Organizó un golpe de estado santo.'),
+            createWord('Josué (Sumo Sacerdote)', 'Zacarías 3:3-4', 'Sacerdote en Zacarías, Satanás lo acusaba, Dios le cambió las ropas.', 'Tenía ropa sucia en una visión.'),
+            createWord('Ahimelec', '1 Samuel 21:6', 'Sacerdote de Nob que ayudó a David y le dio la espada de Goliat.', 'Le dio pan sagrado a un fugitivo.'),
+            createWord('Gamaliel', 'Hechos 5:34', 'Fariseo respetado, maestro de Pablo, aconsejó no matar a los apóstoles.', 'Maestro de un apóstol famoso.'),
+            createWord('Jetro', 'Éxodo 18:17-23', 'Sacerdote de Madián, suegro de Moisés.', 'Aconsejó delegar tareas.'),
+            createWord('Uza', '2 Samuel 6:6-7', 'Murió al sostener el Arca del Pacto cuando los bueyes tropezaron.', 'Tocó lo que no debía y murió.'),
+            createWord('Pasur', 'Jeremías 20:2', 'Sacerdote que puso a Jeremías en el cepo.', 'Golpeó a un profeta.'),
+            createWord('Abiatar', '1 Samuel 22:20', 'Escapó de Nob a David, luego Salomón lo destituyó.', 'Único sobreviviente de una masacre.'),
+            createWord('Hilcías', '2 Reyes 22:8', 'Sumo sacerdote que halló el Libro de la Ley en tiempos de Josías.', 'Encontró un libro viejo y polvoriento.'),
+            createWord('Simeón (Hijo de Jacob)', 'Génesis 42:24', 'Aunque violento, es cabeza de una tribu sacerdotal (junto a Leví).', 'Quedó preso en Egipto un tiempo.'),
+            createWord('Los hijos de Esceva', 'Hechos 19:14-16', 'Judíos exorcistas atacados por un endemoniado que no respetó su autoridad.', 'Salieron corriendo desnudos.')
+        ]
+    },
+
+    reyes_paganos: {
+        id: 'reyes_paganos', name: 'Reyes Paganos', type: 'personajes', words: [
+            createWord('Nabucodonosor', 'Daniel 4:33', 'Rey de Babilonia, destruyó Jerusalén y tuvo sueños proféticos.', 'Vivió como un animal un tiempo.'),
+            createWord('Ciro', 'Esdras 1:1', 'Rey persa que decretó el regreso de los judíos y la reconstrucción.', 'Ungido aunque no era judío.'),
+            createWord('Darío (el Medo)', 'Daniel 6:9', 'Rey que echó a Daniel a los leones muy a su pesar.', 'Lo engañaron para firmar una ley.'),
+            createWord('Asuero (Jerjes)', 'Ester 6:1', 'Esposo de Ester, rey de Persia que gobernaba 127 provincias.', 'No podía dormir y pidió que le leyeran.'),
+            createWord('Artajerjes', 'Nehemías 2:1', 'Rey que dio permiso a Nehemías para ir a Jerusalén.', 'Vio triste a su copero.'),
+            createWord('Belsasar', 'Daniel 5:5', 'Último rey de Babilonia, usó los vasos del templo para una fiesta.', 'Vio una mano escribiendo en la pared.'),
+            createWord('Og de Basán', 'Deuteronomio 3:11', 'Rey gigante derrotado por Moisés, su cama era de hierro.', 'Tenía una cama gigante.'),
+            createWord('Balac', 'Números 22:2', 'Rey de Moab que pagó a Balaam para maldecir a Israel.', 'Contrató a un brujo.'),
+            createWord('Eglón', 'Jueces 3:17', 'Rey de Moab asesinado por Aod en su sala de verano.', 'Era muy gordo.'),
+            createWord('Hiram', '1 Reyes 5:1', 'Rey de Tiro, amigo de David y Salomón, proveyó cedros para el Templo.', 'Mandaba mucha madera.'),
+            createWord('Hazael', '2 Reyes 8:15', 'Rey de Siria profetizado por Eliseo, fue azote para Israel.', 'Mojó un paño y asfixió a su rey.'),
+            createWord('Agag', '1 Samuel 15:32-33', 'Rey amalecita que Saúl perdonó, pero Samuel cortó en pedazos.', 'Caminaba delicadamente.'),
+            createWord('César Augusto', 'Lucas 2:1', 'Emperador romano cuando nació Jesús.', 'Pidió un censo mundial.'),
+            createWord('Tiberio César', 'Lucas 3:1', 'Emperador durante el ministerio de Jesús.', 'Su cara estaba en la moneda.'),
+            createWord('Nerón (César)', 'Hechos 25:11', 'Emperador al que Pablo pidió ser juzgado (aunque la Biblia solo dice "César").', 'Pablo apeló a él.'),
+            createWord('Rey de Nínive', 'Jonás 3:6', 'Se arrepintió tras la predicación de Jonás y salvó su ciudad.', 'Se sentó en ceniza.'),
+            createWord('Adoni-bezec', 'Jueces 1:6-7', 'Rey cananeo que hacía lo mismo a otros reyes, recibió su merecido.', 'Le cortaron pulgares de manos y pies.'),
+            createWord('Sijón', 'Números 21:23', 'Rey amorreo derrotado por Israel antes de entrar a la tierra prometida.', 'No dejó pasar por su carretera.'),
+            createWord('La Reina de Sabá', '1 Reyes 10:1', 'Viajó de lejos para probar la sabiduría de Salomón.', 'Hizo preguntas difíciles.'),
+            createWord('Ben-adad', '1 Reyes 20:16', 'Rey sirio derrotado varias veces por Acab (quien tontamente lo perdonó).', 'Se emborrachaba en las carpas.')
+        ]
+    },
+    heroes_fe: {
+        id: 'heroes_fe', name: 'Héroes de la Fe', type: 'personajes', words: [
+            createWord('Esteban', 'Hechos 7:55-58', 'Primer mártir cristiano, murió apedreado mientras Saulo miraba.', 'Vio el cielo abierto antes de morir.'),
+            createWord('Felipe (El evangelista)', 'Hechos 8:39', 'Predicó en Samaria y al etíope eunuco.', 'Desapareció después de un bautismo.'),
+            createWord('Cornelio', 'Hechos 10:1', 'Centurión romano, primer gentil en recibir el Espíritu Santo.', 'Un soldado que oraba mucho.'),
+            createWord('Bernabé', 'Hechos 4:36-37', 'Hijo de consolación, compañero de Pablo.', 'Vendió su heredad.'),
+            createWord('Timoteo', '2 Timoteo 1:5', 'Joven discípulo de Pablo, pastor en Éfeso.', 'Tenía madre y abuela creyentes.'),
+            createWord('Tito', 'Tito 1:5', 'Colaborador de Pablo encargado de poner orden en Creta.', 'Se quedó en una isla difícil.'),
+            createWord('Apolos', 'Hechos 18:24-26', 'Judío elocuente de Alejandría, Priscila y Aquila le enseñaron más a fondo.', 'Hablaba muy bien pero sabía poco.'),
+            createWord('Lidia', 'Hechos 16:14', 'Primera convertida en Europa (Filipos), hospedó a Pablo.', 'Vendía tela púrpura.'),
+            createWord('Dorcas (Tabita)', 'Hechos 9:36-40', 'Mujer bondadosa de Jope que Pedro resucitó.', 'Hacía ropa para los pobres.'),
+            createWord('Febe', 'Romanos 16:1', 'Diaconisa de Cencrea, portadora de la carta a los Romanos.', 'Llevó una carta importante.'),
+            createWord('Onesíforo', '2 Timoteo 1:16', 'Buscó a Pablo en la cárcel de Roma y lo confortó.', 'No tuvo vergüenza de las cadenas.'),
+            createWord('Filemón', 'Filemón 1', 'Rico cristiano de Colosas, Pablo le pidió recibir a Onésimo como hermano.', 'Tenía un esclavo fugitivo.'),
+            createWord('Onésimo', 'Filemón 1:11', 'Esclavo fugitivo que conoció a Pablo en prisión y se convirtió.', 'Era "inútil" pero se volvió "útil".'),
+            createWord('Epafrodito', 'Filipenses 2:25-27', 'Enviado de los filipenses para cuidar a Pablo, enfermó gravemente.', 'Casi muere por la obra.'),
+            createWord('Lucas', 'Colosenses 4:14', 'Compañero de viajes de Pablo, escribió el Evangelio y Hechos.', 'Era médico.'),
+            createWord('Marcos (Juan Marcos)', 'Hechos 13:13', 'Sobrino de Bernabé, luego fue útil y escribió un evangelio.', 'Abandonó el viaje a la mitad.'),
+            createWord('Jasón', 'Hechos 17:5-9', 'Hospedó a Pablo en Tesalónica y su casa fue atacada.', 'Pagó fianza por los apóstoles.'),
+            createWord('Dionisio el Areopagita', 'Hechos 17:34', 'Creyó en Jesús tras el discurso de Pablo en Atenas.', 'Era un juez griego.'),
+            createWord('Epafras', 'Colosenses 4:12', 'Fundador de la iglesia en Colosas.', 'Oraba intensamente por su ciudad.'),
+            createWord('Gayo', '3 Juan 1', 'Destinatario de 3ra de Juan, andaba en la verdad.', 'Amado por su hospitalidad.')
+        ]
+    },
+    profetas_conocidos: {
+        id: 'profetas_conocidos', name: 'Profetas Conocidos', type: 'personajes', words: [
+            createWord('Isaías', 'Is 1:1', 'Profetizó sobre el Mesías sufriente y la virgen que concebiría.', 'Escribió un libro muy largo.'),
+            createWord('Jeremías', 'Jer 1:1', 'Conocido como el "profeta llorón", predicó al reino del Sur antes del exilio.', 'Pasó momentos muy tristes.'),
+            createWord('Ezequiel', 'Ez 1:1', 'Vio el valle de los huesos secos y la rueda dentro de la rueda.', 'Tuvo visiones muy locas.'),
+            createWord('Daniel', 'Dan 1:1', 'Interpretó sueños de Nabucodonosor y sobrevivió al foso de los leones.', 'Trabajó para el gobierno.'),
+            createWord('Jonás', 'Jon 1:1', 'Fue tragado por un gran pez por huir de Nínive.', 'No quería ir a trabajar.'),
+            createWord('Elías', '1 Re 17:1', 'Fue arrebatado en un carro de fuego y desafió a los profetas de Baal.', 'Hizo caer cosas del cielo.'),
+            createWord('Eliseo', '2 Re 2:9', 'Pidió la doble porción del espíritu de su maestro e hizo flotar un hacha.', 'Recibió una herencia espiritual.'),
+            createWord('Samuel', '1 Sam 3:4', 'Ungió a los dos primeros reyes de Israel (Saúl y David).', 'Lo llamaron de chico.'),
+            createWord('Moisés', 'Dt 34:10', 'Considerado profeta, sacó al pueblo de Egipto y recibió la Ley.', 'Lideró mucha gente.'),
+            createWord('Juan el Bautista', 'Mt 3:1', 'Comía langostas y preparó el camino para Jesús.', 'Vivía en el desierto.'),
+            createWord('Oseas', 'Os 1:2', 'Dios le mandó casarse con una prostituta para simbolizar la infidelidad de Israel.', 'Tuvo problemas matrimoniales.'),
+            createWord('Amós', 'Am 7:14', 'Era boyero y recolector de higos antes de profetizar juicio sobre Israel.', 'Trabajaba en el campo.'),
+            createWord('Miqueas', 'Miq 5:2', 'Profetizó que el Mesías nacería en Belén.', 'Habló de un pueblo pequeño.'),
+            createWord('Malaquías', 'Mal 3:10', 'El último profeta del AT, famoso por el pasaje de los diezmos.', 'Habló de dinero.'),
+            createWord('Joel', 'Jl 2:28', 'Profetizó sobre la plaga de langostas y el derramamiento del Espíritu Santo.', 'Habló de una plaga.'),
+            createWord('Habacuc', 'Hab 2:4', 'Le preguntó a Dios "¿hasta cuándo?" y dijo que el justo vivirá por la fe.', 'Se quejó con Dios.'),
+            createWord('Zacarías', 'Zac 9:9', 'Profetizó la entrada triunfal de Jesús en un asno.', 'Tuvo muchas visiones nocturnas.'),
+            createWord('Hageo', 'Hag 1:4', 'Animó al pueblo a reconstruir el Templo en lugar de sus propias casas.', 'Quería que construyeran algo.'),
+            createWord('Nahúm', 'Nah 1:1', 'Profetizó la destrucción definitiva de Nínive (lo opuesto a Jonás).', 'Tenía malas noticias para una ciudad.'),
+            createWord('Balaam', 'Num 22:28', 'Su burra le habló; intentó maldecir a Israel pero solo pudo bendecirlo.', 'Tuvo un problema con su transporte.')
+        ]
+    },
+    profetas_otros: {
+        id: 'profetas_otros', name: 'Otros Profetas', type: 'personajes', words: [
+            createWord('Agabo', 'Hch 21:10', 'Profeta del NT que ató el cinto de Pablo y predijo una gran hambruna.', 'Predijo algo malo en el futuro.'),
+            createWord('Natán', '2 Sam 12:1', 'Confrontó a David por su pecado con Betsabé.', 'Contó una historia sobre ovejas.'),
+            createWord('Ahías', '1 Re 11:30', 'Rompió su capa en 12 pedazos para profetizar la división del reino a Jeroboam.', 'Rompió ropa.'),
+            createWord('Micaías', '1 Re 22:14', 'Profetizó la derrota de Acab cuando 400 falsos profetas decían que ganaría.', 'Dijo la verdad aunque doliera.'),
+            createWord('Hulda', '2 Re 22:14', 'Profetisa consultada por el rey Josías cuando encontraron el Libro de la Ley.', 'Una mujer consultada por el rey.'),
+            createWord('Gad', '2 Sam 24:11', 'Vidente de David, le dio a elegir tres castigos tras el censo.', 'Aconseja al rey en el bosque.'),
+            createWord('Iddo', '2 Cr 9:29', 'Vidente mencionado en Crónicas, escribió sobre el reinado de Salomón.', 'Escribió crónicas perdidas.'),
+            createWord('Semaías', '1 Re 12:22', 'Le dijo al rey Roboam que no peleara contra las diez tribus del norte.', 'Detuvo una guerra civil.'),
+            createWord('Hanani', '2 Cr 16:7', 'Vidente encarcelado por el rey Asa por reprender su alianza con Siria.', 'Fue a la cárcel por hablar.'),
+            createWord('Jehú (hijo de Hanani)', '1 Re 16:1', 'Profetizó contra el rey Baasa de Israel.', 'No es el rey que maneja rápido.'),
+            createWord('Eliezer', '2 Cr 20:37', 'Profetizó que las naves de Josafat se destruirían por aliarse con Ocozías.', 'Habló de barcos rotos.'),
+            createWord('Jahaziel', '2 Cr 20:14', 'El Espíritu vino sobre él y dijo: "No es vuestra la guerra, sino de Dios".', 'Habló en medio de una reunión.'),
+            createWord('Oded', '2 Cr 28:9', 'Convenció al ejército de Israel de liberar a los cautivos de Judá.', 'Regañó a un ejército victorioso.'),
+            createWord('Azarías', '2 Cr 15:1', 'Le dijo al rey Asa: "Dios estará con vosotros si vosotros estáis con él".', 'Animó a un rey a hacer reformas.'),
+            createWord('Urías', 'Jer 26:20', 'Profeta contemporáneo de Jeremías, el rey Joacim lo mandó a buscar para matarlo.', 'Huyó a Egipto y lo mataron.'),
+            createWord('Noadías', 'Neh 6:14', 'Falsa profetisa que intentó intimidar a Nehemías.', 'Estaba en contra de la construcción.'),
+            createWord('El varón de Dios', '1 Re 13:24', 'Profetizó contra el altar de Betel, pero un viejo profeta lo engañó y murió.', 'Le comió un león.'),
+            createWord('Zacarías (hijo de Joiada)', '2 Cr 24:20', 'Fue apedreado por orden del rey Joás por reprender al pueblo.', 'Murió en el patio del templo.'),
+            createWord('Ana', 'Lc 2:36', 'Profetisa anciana que vio a Jesús bebé en la presentación en el Templo.', 'Vivía en el templo.'),
+            createWord('Silas', 'Hch 15:32', 'Llamado profeta en Hechos, compañero de Pablo en la cárcel de Filipos.', 'Viajaba con un apóstol.')
+        ]
+    },
+    reyes_israel: {
+        id: 'reyes_israel', name: 'Reyes de Israel/Judá', type: 'personajes', words: [
+            createWord('David', '2 Sam 5:4', 'Rey conforme al corazón de Dios, mató a Goliat.', 'Tocaba el arpa.'),
+            createWord('Salomón', '1 Re 3:12', 'El rey más sabio y rico, construyó el Templo.', 'Tuvo muchas esposas.'),
+            createWord('Saúl', '1 Sam 10:1', 'El primer rey de Israel, alto y hermoso, pero desobediente.', 'Se escondió entre el equipaje.'),
+            createWord('Josías', '2 Re 22:1', 'Rey niño que reformó Judá e hizo un gran pacto tras hallar la Ley.', 'Empezó a reinar a los 8 años.'),
+            createWord('Ezequías', '2 Re 18:5', 'Confió en Jehová, oró y el ángel mató a 185,000 asirios.', 'Mostró sus tesoros a los babilonios.'),
+            createWord('Acab', '1 Re 16:30', 'Rey malvado de Israel, esposo de Jezabel, adorador de Baal.', 'Quería una viña ajena.'),
+            createWord('Manasés', '2 Re 21:16', 'Rey muy malo que se arrepintió en la cárcel en Babilonia.', 'Llenó Jerusalén de sangre.'),
+            createWord('Jehu', '2 Re 9:20', 'Rey que manejaba locamente y destruyó el culto a Baal.', 'Manejaba muy rápido.'),
+            createWord('Jeroboam I', '1 Re 12:28', 'Hizo dos becerros de oro para que el pueblo no fuera a Jerusalén.', 'Dividió el reino.'),
+            createWord('Roboam', '1 Re 12:13', 'Hijo de Salomón, sus malos consejos dividieron el reino.', 'Escuchó a los jóvenes.'),
+            createWord('Ocozías', '2 Re 1:2', 'Cayó por una ventana y consultó a Baal-zebub.', 'Se cayó de un piso alto.'),
+            createWord('Uzías', '2 Cr 26:19', 'Rey leproso por intentar ofrecer incienso en el templo.', 'Le salió lepra en la frente.'),
+            createWord('Joás', '2 Re 11:12', 'Rey oculto en el templo por 6 años, comenzó bien y terminó mal.', 'Su tía lo escondió.'),
+            createWord('Asa', '2 Cr 14:11', 'Rey que quitó la idolatría pero al final confió en los médicos y no en Dios.', 'Tenía enfermos los pies.'),
+            createWord('Josafat', '2 Cr 20:20', 'Ganó una batalla con cantores al frente del ejército.', 'Puso cantantes al frente.'),
+            createWord('Sedequías', 'Jer 52:11', 'Último rey de Judá, le sacaron los ojos y lo llevaron a Babilonia.', 'Vio morir a sus hijos.'),
+            createWord('Joacim', 'Jer 36:23', 'Quemó el rollo del libro de Jeremías en el fuego.', 'Cortó la Biblia con un cortaplumas.'),
+            createWord('Omri', '1 Re 16:24', 'Compró el monte de Samaria y edificó la ciudad.', 'Fundó una capital.'),
+            createWord('Jericó', 'Jos 6:1', 'Rey derrotado cuando cayeron los muros (no se nombra, pero representa a los reyes cananeos).', 'Su ciudad cayó por gritos.'),
+            createWord('Abimelec', 'Jue 9:5', 'Hijo de Gedeón, mató a sus 70 hermanos para ser rey.', 'Murió por una piedra de molino.')
+        ]
+    },
+    patriarcas: {
+        id: 'patriarcas', name: 'Patriarcas', type: 'personajes', words: [
+            createWord('Abraham', 'Gen 12:1', 'Padre de la fe, salió de Ur sin saber a dónde iba.', 'Tuvo un hijo en la vejez.'),
+            createWord('Isaac', 'Gen 22:9', 'Hijo de la promesa, casi sacrificado por su padre.', 'Le gustaba el guiso de caza.'),
+            createWord('Jacob', 'Gen 27:19', 'Engañó a su hermano y luchó con el ángel.', 'Usó piel de cabrito.'),
+            createWord('José', 'Gen 37:3', 'El soñador, vendido por sus hermanos, gobernador de Egipto.', 'Tenía una túnica de colores.'),
+            createWord('Noé', 'Gen 6:14', 'Construyó el arca y salvó a su familia del diluvio.', 'Hizo un barco grande.'),
+            createWord('Job', 'Job 1:1', 'Hombre paciente que sufrió mucho pero Dios lo restauró.', 'Tenía sarna y rascaba con teja.'),
+            createWord('Matusalén', 'Gen 5:27', 'El hombre más viejo de la Biblia (969 años).', 'Vivió casi mil años.'),
+            createWord('Enoc', 'Gen 5:24', 'Caminó con Dios y desapareció porque Dios se lo llevó.', 'No vio muerte.'),
+            createWord('Adán', 'Gen 2:7', 'El primer hombre, formado del polvo.', 'Puso nombre a los animales.'),
+            createWord('Set', 'Gen 4:25', 'Hijo de Adán dado en lugar de Abel.', 'Tercer hijo mencionado.'),
+            createWord('Sem', 'Gen 9:26', 'Hijo de Noé, antepasado de Abraham.', 'Cubrió la desnudez de su padre.'),
+            createWord('Cam', 'Gen 9:22', 'Hijo de Noé que vio la desnudez de su padre.', 'Padre de Canaán.'),
+            createWord('Jafet', 'Gen 10:2', 'Hijo de Noé, se expandió por las costas.', 'El tercer hermano del barco.'),
+            createWord('Lot', 'Gen 19:15', 'Sobrino de Abraham, escapó de Sodoma.', 'Su esposa es de sal.'),
+            createWord('Ismael', 'Gen 16:15', 'Primer hijo de Abraham (con Agar), padre de los árabes.', 'Hijo de la sierva.'),
+            createWord('Esaú', 'Gen 25:30', 'Vendió su primogenitura por un plato de lentejas.', 'Era muy velludo.'),
+            createWord('Labán', 'Gen 29:16', 'Tío de Jacob, le cambió el salario 10 veces.', 'Tenía dos hijas para casar.'),
+            createWord('Judá', 'Gen 49:10', 'Hijo de Jacob, antepasado del Mesías (el León).', 'Sugirió vender a José.'),
+            createWord('Benjamín', 'Gen 42:4', 'El hijo menor de Jacob, amado por su padre.', 'En su saco estaba la copa.'),
+            createWord('Rubén', 'Gen 37:21', 'Primogénito de Jacob, quiso salvar a José.', 'Perdió su derecho por subir al lecho.')
         ]
     },
     mujeres: {
-        id: 'mujeres', name: 'Mujeres', level: 'medium', words: [
-            createWord('María', 'Lucas 1', 'Madre de Jesús.', 'Elegida para dar a luz al Salvador.'),
-            createWord('Eva', 'Génesis 3', 'Madre de todos.', 'Primera mujer, fruto prohibido.'),
-            createWord('Sara', 'Génesis 17', 'Rió ante la promesa.', 'Esposa de Abraham, madre anciana.'),
-            createWord('Ester', 'Ester 4', 'Para esta hora.', 'Reina que salvó a su pueblo.'),
-            createWord('Rut', 'Rut 1', 'Tu Dios será mi Dios.', 'Moabita fiel, bisabuela de David.'),
-            createWord('Dalila', 'Jueces 16', 'Traicionó a Sansón.', 'Descubrió el secreto de la fuerza.'),
-            createWord('María Magdalena', 'Lucas 8', 'Siete demonios.', 'Primera en ver al resucitado.'),
-            createWord('Marta', 'Lucas 10', 'Servía mucho.', 'Hermana preocupada de Lázaro.'),
-            createWord('Rahab', 'Josué 2', 'Escondió espías.', 'Ramera de Jericó en la genealogía.'),
-            createWord('Rebeca', 'Génesis 24', 'Esposa de Isaac.', 'Dio agua a los camellos.'),
-            createWord('Raquel', 'Génesis 29', 'Amada de Jacob.', 'Madre de José y Benjamín.'),
-            createWord('Lea', 'Génesis 29', 'Ojos delicados.', 'Primera esposa de Jacob, no amada.'),
-            createWord('Miriam', 'Éxodo 15', 'Panderom, hermana.', 'Hermana de Moisés, tuvo lepra.'),
-            createWord('Débora', 'Jueces 4', 'Jueza bajo palmera.', 'Lideró a Israel a la batalla.'),
-            createWord('Jael', 'Jueces 4', 'Estaca en la sien.', 'Mató a Sísara en su tienda.'),
-            createWord('Ana', '1 Samuel 1', 'Madre de Samuel.', 'Oró por un hijo y lo entregó.'),
-            createWord('Abigail', '1 Samuel 25', 'Sabia y hermosa.', 'Evitó que David matara a Nabal.'),
-            createWord('Betsabé', '2 Samuel 11', 'Madre de Salomón.', 'Esposa de Urías, vista desde el terrado.'),
-            createWord('Sunamita', '2 Reyes 4', 'Hizo cuarto a Eliseo.', 'Mujer rica que hospedó al profeta.'),
-            createWord('Elisabeth', 'Lucas 1', 'Madre de Juan.', 'Pariente de María, embarazada en vejez.'),
-            createWord('Lidia', 'Hechos 16', 'Vendedora de púrpura.', 'Primera convertida en Europa.'),
-            createWord('Priscila', 'Hechos 18', 'Esposa de Aquila.', 'Maestra de Apolos junto a su esposo.'),
-            createWord('Febe', 'Romanos 16', 'Diaconisa en Cencrea.', 'Llevó la carta a los romanos.'),
-            createWord('Agar', 'Génesis 16', 'Madre de Ismael.', 'Sierva egipcia de Sara.'),
-            createWord('Dina', 'Génesis 34', 'Hija de Jacob.', 'Su deshonra causó una masacre.'),
-            createWord('Tamar', 'Génesis 38', 'Nuera de Judá.', 'Se disfrazó para obtener descendencia.'),
-            createWord('Sifrá', 'Éxodo 1', 'Partera hebrea.', 'Temió a Dios y no mató bebés.'),
-            createWord('Fúa', 'Éxodo 1', 'Compañera de Sifrá.', 'Otra partera valiente.'),
-            createWord('Jezabel', '1 Reyes 21', 'Esposa de Acab.', 'Reina malvada que perseguía profetas.'),
-            createWord('Atalía', '2 Reyes 11', 'Reina usurpadora.', 'Mató a la descendencia real.')
+        id: 'mujeres', name: 'Mujeres Bíblicas', type: 'personajes', words: [
+            createWord('Eva', 'Gen 3:6', 'La primera mujer, madre de todos los vivientes.', 'Comió la fruta prohibida.'),
+            createWord('Sara', 'Gen 17:15', 'Esposa de Abraham, madre de Isaac en la vejez.', 'Se rió de la promesa.'),
+            createWord('Rebeca', 'Gen 24:19', 'Esposa de Isaac, ayudó a Jacob a engañar a su padre.', 'Dio agua a los camellos.'),
+            createWord('Raquel', 'Gen 29:17', 'La esposa amada de Jacob, madre de José y Benjamín.', 'Robó los ídolos de su padre.'),
+            createWord('Lea', 'Gen 29:17', 'Primera esposa de Jacob, de ojos delicados, madre de Judá.', 'La que no era tan bonita.'),
+            createWord('Débora', 'Jue 4:4', 'Jueza y profetisa que lideró a Israel a la victoria.', 'Se sentaba bajo una palmera.'),
+            createWord('Rut', 'Rut 1:16', 'Moabita fiel que siguió a Noemí: "Tu pueblo será mi pueblo".', 'Espigaba en los campos.'),
+            createWord('Ester', 'Ester 4:16', 'Reina persa que salvó a su pueblo: "Si perezco, que perezca".', 'Ganó un concurso de belleza.'),
+            createWord('María (Madre de Jesús)', 'Lc 1:38', 'Joven virgen elegida para dar a luz al Salvador.', 'Dijo: "Hágase en mí tu voluntad".'),
+            createWord('María Magdalena', 'Lc 8:2', 'Jesús echó de ella 7 demonios, primera en ver al resucitado.', 'Llevó perfumes a la tumba.'),
+            createWord('Marta', 'Lc 10:40', 'Hermana de Lázaro, afanada con los quehaceres.', 'Reclamó que no le ayudaban.'),
+            createWord('María (Hermana de Lázaro)', 'Lc 10:39', 'Escogió la buena parte sentándose a los pies de Jesús.', 'Derramó perfume caro.'),
+            createWord('Ana (Madre de Samuel)', '1 Sam 1:28', 'Oró con amargura por un hijo y lo entregó a Dios.', 'El sacerdote pensó que estaba ebria.'),
+            createWord('Abigail', '1 Sam 25:3', 'Mujer sabia que evitó que David matara a su esposo Nabal.', 'Llevó comida en asnos.'),
+            createWord('Rahab', 'Jos 2:1', 'Prostituta de Jericó que escondió a los espías.', 'Colgó un cordón rojo.'),
+            createWord('Dalila', 'Jue 16:18', 'Descubrió el secreto de la fuerza de Sansón y lo traicionó.', 'Le cortó el pelo al novio.'),
+            createWord('Jezabel', '1 Re 21:23', 'Reina malvada que mataba profetas y murió comida por perros.', 'Se pintaba los ojos.'),
+            createWord('La mujer samaritana', 'Jn 4:7', 'Habló con Jesús en el pozo y trajo a su ciudad a verlo.', 'Tuvo cinco maridos.'),
+            createWord('Priscila', 'Hch 18:26', 'Esposa de Aquila, maestra de Apolos y colaboradora de Pablo.', 'Fabricaba carpas con su esposo.'),
+            createWord('Miriam', 'Ex 15:20', 'Hermana de Moisés, tocó el pandero tras cruzar el Mar Rojo.', 'Se puso leprosa por criticar.')
         ]
     },
     lugares: {
-        id: 'lugares', name: 'Lugares', level: 'medium', words: [
-            createWord('Jerusalén', 'Ciudad de Paz', 'Capital de David.', 'Ciudad santa, sitio del templo.'),
-            createWord('Belén', 'Casa de Pan', 'Nacimiento de Jesús.', 'Pequeña aldea de Judá.'),
-            createWord('Nazaret', 'Hogar de Jesús', '¿Algo bueno de allí?', 'Donde creció el carpintero.'),
-            createWord('Galilea', 'Región Norte', 'Ministerio de Jesús.', 'Región del lago y los discípulos.'),
-            createWord('Jordán', 'Río de Bautismo', 'Naamán se lavó.', 'Río principal, límite de la tierra.'),
-            createWord('Egipto', 'Tierra de esclavitud', 'José gobernó allí.', 'Lugar de refugio y cautiverio.'),
-            createWord('Sinaí', 'Monte de la Ley', 'Moisés subió.', 'Donde se dieron los mandamientos.'),
-            createWord('Jericó', 'Ciudad Palmeras', 'Muros cayeron.', 'Primera ciudad conquistada.'),
-            createWord('Getsemaní', 'Prensa de aceite', 'Jesús oró allí.', 'Huerto de la agonía.'),
-            createWord('Gólgota', 'Lugar Calavera', 'Crucifixión.', 'Monte de la muerte.'),
-            createWord('Betania', 'Casa de dátiles', 'Lázaro vivía allí.', 'Aldea cerca de Jerusalén.'),
-            createWord('Cafarnaúm', 'Aldea de Nahúm', 'Base de Jesús.', 'Ciudad a orillas del mar.'),
-            createWord('Emaús', 'Camino revelación', 'Jesús caminó allí.', 'Aldea a la que iban dos discípulos.'),
-            createWord('Sodoma', 'Ciudad destruida', 'Lluvia de fuego.', 'Destruida por su pecado.'),
-            createWord('Nínive', 'Gran ciudad', 'Jonás predicó.', 'Capital de Asiria, se arrepintió.'),
-            createWord('Babilonia', 'Confusión', 'Cautiverio.', 'Gran imperio, torre famosa.'),
-            createWord('Roma', 'Capital Imperio', 'Pablo preso allí.', 'Centro del mundo antiguo.'),
-            createWord('Patmos', 'Isla Apocalipsis', 'Juan exiliado.', 'Isla rocosa de la visión.'),
-            createWord('Caná', 'Lugar de bodas', 'Agua en vino.', 'Lugar del primer milagro.'),
-            createWord('Olivos', 'Monte de Olivos', 'Ascensión.', 'Monte frente al templo.'),
-            createWord('Carmelo', 'Jardín', 'Elías vs Baal.', 'Monte del desafío de fuego.'),
-            createWord('Tabor', 'Transfiguración', 'Monte alto.', 'Posible lugar de la gloria.'),
-            createWord('Mar Muerto', 'Mar Salado', 'Sin vida.', 'Lago más bajo del mundo.'),
-            createWord('Ur', 'De los Caldeos', 'Salida de Abraham.', 'Ciudad natal del patriarca.'),
-            createWord('Antioquía', 'Primeros Cristianos', 'Llamados cristianos.', 'Base de misiones de Pablo.')
+        id: 'lugares', name: 'Lugares Bíblicos', type: 'lugares', words: [
+            createWord('Jerusalén', 'Salmos 122:6', 'Ciudad de paz, capital de David, sitio del Templo.', 'Ciudad santa.'),
+            createWord('Belén', 'Miqueas 5:2', 'Pequeña aldea de Judá donde nació el Mesías.', 'Casa de pan.'),
+            createWord('Nazaret', 'Juan 1:46', 'Aldea de Galilea, hogar de la infancia de Jesús.', '¿Puede salir algo bueno de ahí?'),
+            createWord('Río Jordán', 'Mateo 3:13', 'Lugar de bautismo y frontera de la tierra prometida.', 'Naamán se lavó ahí.'),
+            createWord('Mar de Galilea', 'Mateo 4:18', 'Lago donde Jesús caminó sobre las aguas y llamó pescadores.', 'Lugar de tormentas y pesca.'),
+            createWord('Monte Sinaí', 'Éxodo 19:18', 'Montaña donde Dios entregó la Ley entre fuego y humo.', 'Monte de los mandamientos.'),
+            createWord('Jericó', 'Josué 6:20', 'Ciudad de las palmeras, sus muros cayeron por la fe.', 'Primera ciudad conquistada.'),
+            createWord('Egipto', 'Éxodo 1:11', 'Lugar de refugio para Jesús y esclavitud para Israel.', 'Tierra de pirámides y faraones.'),
+            createWord('Babilonia', 'Daniel 1:1', 'Gran imperio que llevó cautivo a Judá, ciudad de la torre.', 'Lugar de confusión y exilio.'),
+            createWord('Getsemaní', 'Mateo 26:36', 'Huerto de los olivos donde Jesús oró en agonía.', 'Prensa de aceite.'),
+            createWord('Gólgota', 'Mateo 27:33', 'Lugar de la Calavera, sitio de la crucifixión.', 'Monte de la muerte.'),
+            createWord('El Edén', 'Génesis 2:8', 'Huerto perfecto creado por Dios para el hombre.', 'El paraíso perdido.'),
+            createWord('Sodoma', 'Génesis 19:24', 'Ciudad destruida por fuego y azufre por su maldad.', 'Ciudad del pecado.'),
+            createWord('Nínive', 'Jonás 3:3', 'Gran ciudad asiria que se arrepintió con la predicación de Jonás.', 'Ciudad de enemigos perdonados.'),
+            createWord('Betania', 'Juan 11:1', 'Aldea de Lázaro, Marta y María, cerca de Jerusalén.', 'Donde vivían los amigos de Jesús.'),
+            createWord('Monte Carmelo', '1 Reyes 18:19', 'Lugar del desafío de Elías contra los profetas de Baal.', 'Monte del fuego.'),
+            createWord('Camino a Emaús', 'Lucas 24:13', 'Ruta donde Jesús se apareció a dos discípulos tras resucitar.', 'Caminata de revelación.'),
+            createWord('Ur de los caldeos', 'Génesis 11:31', 'Ciudad natal de Abraham de la cual salió.', 'Punto de partida del patriarca.'),
+            createWord('Monte de los Olivos', 'Hechos 1:12', 'Sitio de la ascensión de Jesús y su regreso futuro.', 'Monte frente al templo.'),
+            createWord('La tumba vacía', 'Juan 20:1', 'Sepulcro nuevo de José de Arimatea, hallado sin cuerpo.', 'Lugar de resurrección.')
         ]
     },
-    reyes: {
-        id: 'reyes', name: 'Reyes', level: 'medium', words: [
-            createWord('David', '2 Sam 5', 'Conforme al corazón.', 'Mató a Goliat, rey poeta.'),
-            createWord('Salomón', '1 Reyes 1', 'El más sabio.', 'Construyó el templo, tuvo muchas mujeres.'),
-            createWord('Saúl', '1 Samuel 10', 'El primer rey.', 'Alto, persiguió a David.'),
-            createWord('Herodes Grande', 'Mateo 2', 'Matanza inocentes.', 'Rey constructor y paranoico.'),
-            createWord('Faraón', 'Éxodo 5', 'Deja ir a mi pueblo.', 'Corazón endurecido en Egipto.'),
-            createWord('Nabucodonosor', 'Daniel 2', 'Estatua de oro.', 'Rey de Babilonia que comió pasto.'),
-            createWord('Ezequías', '2 Reyes 18', 'Rey bueno.', 'Mostró tesoros a Babilonia.'),
-            createWord('Is-boset', '2 Samuel 2', 'Hijo de Saúl.', 'Rey de Israel rival de David.'),
-            createWord('Roboam', '1 Reyes 12', 'Dividió el reino.', 'Hijo de Salomón, consejos de jóvenes.'),
-            createWord('Jeroboam', '1 Reyes 12', 'Becerros de oro.', 'Primer rey del norte, idolatría.'),
-            createWord('Asa', '1 Reyes 15', 'Rey bueno.', 'Reformador en Judá.'),
-            createWord('Josafat', '1 Reyes 22', 'Canto en guerra.', 'Rey que buscó a Dios.'),
-            createWord('Acab', '1 Reyes 16', 'Esposo de Jezabel.', 'Rey más malvado de Israel.'),
-            createWord('Jeú', '2 Reyes 9', 'Manejaba locamente.', 'Mató a la casa de Acab.'),
-            createWord('Joás', '2 Reyes 11', 'Rey niño.', 'Escondido en el templo 6 años.'),
-            createWord('Uzías', '2 Reyes 15', 'Lepra en frente.', 'Rey fuerte hasta que ofreció incienso.'),
-            createWord('Manasés', '2 Reyes 21', 'Muy malo, luego bueno.', 'Reinó 55 años, derramó sangre.'),
-            createWord('Josías', '2 Reyes 22', 'Halló el libro.', 'Rey niño reformador.'),
-            createWord('Sedequías', '2 Reyes 24', 'Último rey.', 'Ojos sacados, llevado a Babilonia.'),
-            createWord('Ciro', 'Esdras 1', 'Rey persa.', 'Permitió el regreso de los judíos.'),
-            createWord('Darío', 'Daniel 6', 'Foso de leones.', 'Rey medo que amaba a Daniel.'),
-            createWord('Artajerjes', 'Nehemías 2', 'Copa de vino.', 'Rey persa que envió a Nehemías.'),
-            createWord('Agripa', 'Hechos 26', 'Por poco me persuades.', 'Escuchó la defensa de Pablo.'),
-            createWord('Herodes Antipas', 'Lucas 23', 'Zorra.', 'Mató a Juan, vio a Jesús.')
+    lugares_dificiles: {
+        id: 'lugares_dificiles', name: 'Lugares (Difícil)', type: 'lugares', words: [
+            createWord('Patmos', 'Apocalipsis 1:9', 'Isla rocosa donde Juan recibió la revelación.', 'Isla prisión.'),
+            createWord('Antioquía', 'Hechos 11:26', 'Ciudad donde se llamó "cristianos" por primera vez a los discípulos.', 'Base de misiones de Pablo.'),
+            createWord('Tarso', 'Hechos 22:3', 'Ciudad culta de Cilicia, lugar de nacimiento de Pablo.', 'Ciudad de ciudadanía romana.'),
+            createWord('Monte Tabor', 'Jueces 4:6', 'Monte alto, tradicional sitio de la Transfiguración.', 'Monte de la gloria.'),
+            createWord('Monte Nebo', 'Deuteronomio 34:1', 'Desde aquí Moisés vio la Tierra Prometida antes de morir.', 'Mirador final de Moisés.'),
+            createWord('Susa', 'Ester 1:2', 'Capital de invierno de Persia, escenario del libro de Ester.', 'Ciudad del palacio real persa.'),
+            createWord('Corinto', 'Hechos 18:1', 'Ciudad griega famosa por su comercio y su inmoralidad.', 'Ciudad de dos cartas de Pablo.'),
+            createWord('Tesalónica', 'Hechos 17:1', 'Ciudad macedonia donde Pablo predicó y fue perseguido.', 'Recibió dos cartas sobre el fin.'),
+            createWord('Filipos', 'Hechos 16:12', 'Colonia romana donde encarcelaron a Pablo y Silas.', 'Ciudad del carcelero convertido.'),
+            createWord('Éfeso', 'Hechos 19:1', 'Ciudad de Artemisa, Pablo pasó 3 años allí.', 'Ciudad del gran teatro.'),
+            createWord('Ararat', 'Génesis 8:4', 'Montes donde se posó el arca de Noé.', 'Estacionamiento del barco.'),
+            createWord('Madián', 'Éxodo 2:15', 'Tierra donde Moisés huyó y vivió 40 años pastoreando.', 'Tierra del suegro de Moisés.'),
+            createWord('Hebrón', '2 Samuel 2:11', 'Primera capital de David antes de Jerusalén.', 'Ciudad de los patriarcas.'),
+            createWord('Betel', 'Génesis 28:19', 'Lugar donde Jacob soñó con la escalera al cielo.', 'Casa de Dios.'),
+            createWord('Silo', '1 Samuel 1:3', 'Donde estaba el Tabernáculo antes de Jerusalén, y Samuel servía.', 'Primer santuario fijo.'),
+            createWord('Gilgal', 'Josué 5:9', 'Primer campamento de Israel en Canaán, lugar de la circuncisión.', 'Donde rodó el oprobio.'),
+            createWord('Sunem', '2 Reyes 4:8', 'Pueblo de la mujer rica que hospedó a Eliseo.', 'Lugar de la mujer hospitalaria.'),
+            createWord('Endor', '1 Samuel 28:7', 'Lugar de la adivina consultada por Saúl.', 'Sitio de espiritismo.'),
+            createWord('Monte Hermón', 'Salmos 133:3', 'Monte alto del norte, famoso por su rocío.', 'Monte de nieve.'),
+            createWord('Rio Éufrates', 'Génesis 2:14', 'Gran río de Mesopotamia, uno de los 4 del Edén.', 'El gran río del oriente.')
         ]
     },
-    bandas: {
-        id: 'bandas', name: 'Música Cristiana', level: 'medium', words: [
-            createWord('Hillsong', 'Australia', 'Banda de adoración australiana.', 'Famosos por "Oceans" y conferencias.'),
-            createWord('Marcos Witt', 'México', 'Pionero alabanza.', 'Cantante de "Renuévame" y "Enciende una luz".'),
-            createWord('Jesús A. Romero', 'México', 'Princesas Mágicas.', 'Cantante de melodías románticas cristianas.'),
-            createWord('Miel San Marcos', 'Guatemala', 'No hay lugar mas alto.', 'Banda familiar de adoración profética.'),
-            createWord('Barak', 'Rep. Dom.', 'Ven Espíritu Santo.', 'Fuego y poder en sus canciones.'),
-            createWord('Redimi2', 'Rep. Dom.', 'Trap cristiano.', 'Rapero que dice "Who is the boss?".'),
-            createWord('Tercer Cielo', 'Rep. Dom.', 'Creeré.', 'Dúo esposo y esposa, baladas pop.'),
-            createWord('Alex Campos', 'Colombia', 'Al taller del maestro.', 'Rock pop con voz particular.'),
-            createWord('Christine DClario', 'EEUU', 'Como dijiste.', 'Adoradora con gran voz y raíces de PR.'),
-            createWord('Marco Barrientos', 'México', 'Sin reservas.', 'Líder de adoración "Espíritu Santo ven".'),
-            createWord('Elevation', 'EEUU', 'La tumba está vacía.', 'Banda de una iglesia grande en Charlotte.'),
-            createWord('Maverick City', 'EEUU', 'Jireh.', 'Colectivo diverso de adoración.'),
-            createWord('Rescate', 'Argentina', 'Rock cristiano.', 'Banda de rock argentina "Soy locos".'),
-            createWord('Petra', 'EEUU', 'Rock clásico.', 'Pioneros del rock cristiano en inglés.'),
-            createWord('Stryper', 'EEUU', 'Metal cristiano.', 'Tiraban biblias al público.'),
-            createWord('DC Talk', 'EEUU', 'Jesus Freak.', 'Trío famoso en los 90s.'),
-            createWord('Casting Crowns', 'EEUU', 'Who am I.', 'Banda de un pastor de jóvenes.'),
-            createWord('MercyMe', 'EEUU', 'I can only imagine.', 'Canción más famosa de la historia cristiana.'),
-            createWord('Kike Pavón', 'España', 'Empezar de nuevo.', 'Cantante español juvenil.'),
-            createWord('Evan Craft', 'EEUU', 'Canta en español.', 'Gringo que ama a los latinos.')
+    milagros: {
+        id: 'milagros', name: 'Milagros y Eventos', type: 'eventos', words: [
+            createWord('La Creación', 'Génesis 1:1', 'Dios creó los cielos y la tierra en 6 días.', 'El inicio de todo.'),
+            createWord('El Diluvio', 'Génesis 7:17', 'Lluvia por 40 días, cubrió los montes más altos.', 'Mucha agua y un barco.'),
+            createWord('La Zarza Ardiendo', 'Éxodo 3:2', 'Arbusto que ardía sin consumirse, Dios habló a Moisés.', 'Fuego que no quema.'),
+            createWord('Las 10 Plagas', 'Éxodo 7-12', 'Juicios sobre Egipto: sangre, ranas, langostas, etc.', 'Desastres naturales sobrenaturales.'),
+            createWord('Cruce del Mar Rojo', 'Éxodo 14:21', 'Las aguas se abrieron para que Israel pasara en seco.', 'Un camino en el mar.'),
+            createWord('Maná del cielo', 'Éxodo 16:15', 'Pan que caía cada mañana para alimentar al pueblo.', 'Comida blanca y dulce.'),
+            createWord('Muros de Jericó', 'Josué 6:20', 'Cayeron tras rodear la ciudad y gritar.', 'Derrumbe por sonido.'),
+            createWord('El Sol se detuvo', 'Josué 10:13', 'El día se alargó para que Josué ganara la batalla.', 'Un día muy largo.'),
+            createWord('Fuego en el Carmelo', '1 Reyes 18:38', 'Fuego consumió el sacrificio empapado de Elías.', 'Respuesta ardiente del cielo.'),
+            createWord('Horno de Fuego', 'Daniel 3:25', 'Sadrac, Mesac y Abed-nego no se quemaron.', 'Paseo en el fuego con un cuarto hombre.'),
+            createWord('Daniel en los leones', 'Daniel 6:22', 'Los ángeles cerraron la boca de las fieras.', 'Noche tranquila en el zoológico.'),
+            createWord('Jonás y el pez', 'Jonás 1:17', 'Tragado y vomitado vivo tres días después.', 'Submarino biológico.'),
+            createWord('Agua en Vino', 'Juan 2:9', 'Primer milagro de Jesús en una boda en Caná.', 'La mejor bebida al final.'),
+            createWord('Multiplicación Panes', 'Mateo 14:19', '5 panes y 2 peces alimentaron a 5000.', 'Picnic gigante con poca comida.'),
+            createWord('Caminar sobre agua', 'Mateo 14:25', 'Jesús anduvo sobre el mar en la tormenta.', 'Surf sin tabla.'),
+            createWord('Resurrección de Lázaro', 'Juan 11:43', 'Salió de la tumba tras 4 días muerto.', 'Un muerto que camina.'),
+            createWord('Sanidad del ciego', 'Juan 9:6', 'Jesús hizo lodo con saliva y untó sus ojos.', 'Barro medicinal.'),
+            createWord('Pesca Milagrosa', 'Lucas 5:6', 'Las redes se rompían de tantos peces.', 'El barco casi se hunde de peces.'),
+            createWord('Ascensión de Jesús', 'Hechos 1:9', 'Subió al cielo en una nube.', 'Despegue vertical.'),
+            createWord('Pentecostés', 'Hechos 2:2', 'Vino el Espíritu Santo con lenguas de fuego.', 'Viento y fuego en la casa.')
         ]
     },
-    random: {
-        id: 'random', name: 'Aleatorio', level: 'hard', words: [
-            createWord('Amén', 'Apocalipsis', 'Así sea.', 'Palabra final de las oraciones.'),
-            createWord('Aleluya', 'Salmos', 'Alabado sea Jehová.', 'Expresión de júbilo.'),
-            createWord('Diezmo', 'Malaquías', 'El 10 por ciento.', 'Parte que se devuelve a Dios.'),
-            createWord('Ayuno', 'Mateo 6', 'No comer.', 'Privarse de alimentos para orar.'),
-            createWord('Oración', 'Mateo 6', 'Hablar con Dios.', 'Comunicación con el Padre.'),
-            createWord('Fe', 'Hebreos 11', 'Certeza de lo que espera.', 'Creer sin ver.'),
-            createWord('Gracia', 'Efesios 2', 'Regalo inmerecido.', 'Favor de Dios que no merecemos.'),
-            createWord('Pecado', 'Romanos 3', 'Errar al blanco.', 'Lo que nos separa de Dios.'),
-            createWord('Arrepentimiento', 'Hechos 2', 'Cambio de mente.', 'Volverse de los malos caminos.'),
-            createWord('Santidad', '1 Pedro 1', 'Apartado para Dios.', 'Sed santos porque yo soy santo.'),
-            createWord('Unción', '1 Juan 2', 'Poder del Espíritu.', 'Aceite derramado o poder especial.'),
-            createWord('Bautismo', 'Mateo 28', 'Sumergir.', 'Ordenanza de agua.'),
-            createWord('Santa Cena', '1 Corintios 11', 'Pan y vino.', 'Memorial de la muerte de Jesús.'),
-            createWord('Púlpito', 'Nehemías 8', 'Lugar de predicación.', 'Mueble de madera para predicar.'),
-            createWord('Ofrenda', 'Lucas 21', 'Dar con alegría.', 'Lo que se da voluntariamente.'),
-            createWord('Misionero', 'Hechos 13', 'Enviado.', 'El que va a predicar a otro lado.'),
-            createWord('Diácono', '1 Timoteo 3', 'Servidor.', 'Ayuda en las mesas y a los pobres.'),
-            createWord('Anciano', 'Tito 1', 'Líder de iglesia.', 'Pastor o supervisor.'),
-            createWord('Hermanos', 'Salmos 133', 'Convivencia en armonía.', 'Miembros de la familia de fe.'),
-            createWord('Jubileo', 'Levítico 25', 'Año 50.', 'Año de libertad y restitución.')
+    acciones: {
+        id: 'acciones', name: 'Acciones Bíblicas', type: 'eventos', words: [
+            createWord('Orar', '1 Tesalonicenses 5:17', 'Hablar con Dios.', 'Hablar sin mover los labios (a veces).'),
+            createWord('Ayunar', 'Mateo 6:16', 'Abstenerse de comida para buscar a Dios.', 'Dejar de comer por fe.'),
+            createWord('Bautizar', 'Mateo 28:19', 'Sumergir en agua en el nombre de la Trinidad.', 'Mojarse por completo.'),
+            createWord('Predicar', 'Marcos 16:15', 'Anunciar las buenas nuevas.', 'Hablar en público de Dios.'),
+            createWord('Adorar', 'Juan 4:24', 'Rendir culto a Dios en espíritu y verdad.', 'Cantar o postrarse.'),
+            createWord('Ofrendar', '2 Corintios 9:7', 'Dar dinero o bienes para la obra de Dios.', 'Poner dinero en el plato.'),
+            createWord('Perdonar', 'Mateo 6:14', 'Soltar la ofensa contra otro.', 'Olvidar el daño recibido.'),
+            createWord('Servir', 'Mateo 20:28', 'Ayudar a otros como Jesús lo hizo.', 'Hacer cosas por los demás.'),
+            createWord('Evangelizar', 'Hechos 1:8', 'Compartir a Cristo con los perdidos.', 'Contar las buenas noticias.'),
+            createWord('Profetizar', '1 Corintios 14:3', 'Hablar de parte de Dios para edificación.', 'Hablar futuro o consuelo.'),
+            createWord('Ungir', 'Santiago 5:14', 'Aplicar aceite sobre alguien orando.', 'Poner aceite en la cabeza.'),
+            createWord('Cenar (Santa Cena)', '1 Corintios 11:24', 'Comer pan y beber vino en memoria de Jesús.', 'Comer un pedacito de pan.'),
+            createWord('Confesar', '1 Juan 1:9', 'Declarar los pecados a Dios.', 'Decir lo malo que hiciste.'),
+            createWord('Diezmar', 'Malaquías 3:10', 'Dar el 10% de los ingresos.', 'Dar la décima parte.'),
+            createWord('Sanar', 'Marcos 16:18', 'Restaurar la salud por poder divino.', 'Curar sin medicina.'),
+            createWord('Discipular', 'Mateo 28:19', 'Enseñar a otros a seguir a Jesús.', 'Enseñar a un aprendiz.'),
+            createWord('Interceder', '1 Timoteo 2:1', 'Orar a favor de otra persona.', 'Pedir por otro.'),
+            createWord('Bendecir', 'Números 6:24', 'Desear o declarar el bien sobre alguien.', 'Decir cosas buenas.'),
+            createWord('Arrepentirse', 'Hechos 3:19', 'Cambiar de mente y volverse a Dios.', 'Dar media vuelta en la vida.'),
+            createWord('Congregarse', 'Hebreos 10:25', 'Reunirse con otros creyentes.', 'Ir a la iglesia.')
         ]
     },
-    reformadores: {
-        id: 'reformadores', name: 'Historia Iglesia', level: 'hard', words: [
-            createWord('Lutero', 'Alemania', '95 Tesis.', 'Martillo en la puerta de Wittenberg.'),
-            createWord('Calvino', 'Ginebra', 'Institución.', 'Teólogo de la predestinación.'),
-            createWord('Zuinglio', 'Suiza', 'Reforma suiza.', 'Contemporáneo de Lutero en Zurich.'),
-            createWord('John Knox', 'Escocia', 'Presbiterianismo.', 'Reformador escocés fiero.'),
-            createWord('Wycliffe', 'Inglaterra', 'Estrella matutina.', 'Tradujo la Biblia al inglés antes de la reforma.'),
-            createWord('Hus', 'Bohemia', 'Ganso cocinado.', 'Quemado en la hoguera, predijo a Lutero.'),
-            createWord('Spurgeon', 'Inglaterra', 'Príncipe predicadores.', 'Predicador bautista victoriano.'),
-            createWord('Wesley', 'Inglaterra', 'Metodismo.', 'Jinete de Dios, corazón ardiente.'),
-            createWord('Whitefield', 'Inglaterra', 'Gran Despertar.', 'Predicaba al aire libre a miles.'),
-            createWord('Edwards', 'EEUU', 'Pecadores en manos.', 'Teólogo del avivamiento americano.'),
-            createWord('Agustín', 'Hipona', 'Confesiones.', 'Padre de la iglesia, hijo de Mónica.'),
-            createWord('Constantino', 'Roma', 'Edicto de Milán.', 'Emperador que legalizó el cristianismo.'),
-            createWord('Francisco Asís', 'Italia', 'Pobreza.', 'Amigo de los animales, monje pobre.'),
-            createWord('San Pedro', 'Vaticano', 'Primer Papa (según católicos).', 'Pescador que lideró la iglesia.'),
-            createWord('Pablo', 'Tarso', 'Apóstol gentiles.', 'Escribió gran parte del NT.'),
-            createWord('Policarpo', 'Esmirna', 'Discípulo de Juan.', 'Obispo mártir que no negó a Cristo.'),
-            createWord('Tyndale', 'Inglaterra', 'Traductor mártir.', 'Estrangulado y quemado por traducir.'),
-            createWord('Moody', 'EEUU', 'Evangelista.', 'Zapatero que se convirtió en predicador.'),
-            createWord('Billy Graham', 'EEUU', 'Cruzadas.', 'Evangelista del siglo XX, estadios llenos.'),
-            createWord('C.S. Lewis', 'Inglaterra', 'Narnia.', 'Apologista y escritor de fantasía.')
+    libros: {
+        id: 'libros', name: 'Libros de la Biblia', type: 'cultura', words: [
+            createWord('Génesis', 'Gen 1:1', 'El libro de los orígenes.', 'Primer libro.'),
+            createWord('Salmos', 'Sal 23:1', 'Libro de canciones y oraciones poéticas.', 'Está en el medio de la Biblia.'),
+            createWord('Apocalipsis', 'Ap 1:1', 'Profecía sobre el fin de los tiempos.', 'Último libro.'),
+            createWord('Romanos', 'Rom 1:16', 'Carta doctrinal de Pablo sobre la justificación.', 'Carta a la capital del imperio.'),
+            createWord('Proverbios', 'Prov 1:7', 'Colección de dichos sabios de Salomón.', 'Libro de sabiduría práctica.'),
+            createWord('Mateo', 'Mt 1:1', 'Primer evangelio, dirigido a los judíos.', 'Escrito por un ex recaudador.'),
+            createWord('Hechos', 'Hch 1:8', 'Historia de la iglesia primitiva y los apóstoles.', 'Libro de acción y viajes.'),
+            createWord('Éxodo', 'Ex 1:1', 'Narra la salida de Egipto y la entrega de la Ley.', 'Libro de la liberación.'),
+            createWord('Isaías', 'Is 53:5', 'El profeta mesiánico por excelencia.', 'Libro largo con muchas profecías.'),
+            createWord('Job', 'Job 1:21', 'Trata sobre el sufrimiento del justo.', 'Libro muy antiguo y filosófico.'),
+            createWord('Eclesiastés', 'Ecl 1:2', 'Todo es vanidad bajo el sol.', 'Escrito por un rey deprimido (aparentemente).'),
+            createWord('Cantares', 'Cant 2:16', 'Poema de amor entre el amado y la amada.', 'Libro romántico.'),
+            createWord('Levítico', 'Lev 19:18', 'Leyes sobre sacrificios y santidad.', 'Libro de reglas para sacerdotes.'),
+            createWord('Jonás', 'Jon 1:17', 'Historia de un profeta rebelde y un gran pez.', 'Libro corto con un animal grande.'),
+            createWord('Rut', 'Rut 1:16', 'Historia de amor y redención en los campos de Belén.', 'Libro con nombre de mujer.'),
+            createWord('Ester', 'Ester 4:14', 'La providencia de Dios salva a los judíos en Persia.', 'Libro donde no se nombra a Dios.'),
+            createWord('Daniel', 'Dan 6:22', 'Historias de fe en Babilonia y profecías.', 'Libro con leones y estatuas.'),
+            createWord('Hebreos', 'Heb 11:1', 'Muestra la superioridad de Cristo sobre el antiguo pacto.', 'Carta a los judíos cristianos.'),
+            createWord('Santiago', 'Stg 2:17', 'La fe sin obras es muerta.', 'Carta muy práctica y directa.'),
+            createWord('1 Corintios', '1 Cor 13:13', 'Carta sobre problemas en la iglesia y el amor.', 'Carta del amor.')
         ]
     },
-    villanos: {
-        id: 'villanos', name: 'Villanos Bíblicos', level: 'medium', words: [
-            createWord('Satanás', 'Job 1', 'El adversario.', 'El enemigo de nuestras almas.'),
-            createWord('Caín', 'Génesis 4', 'Mató a Abel.', 'El primer asesino.'),
-            createWord('Faraón', 'Éxodo', 'No dejó ir.', 'Oprimió a Israel en Egipto.'),
-            createWord('Goliat', '1 Samuel 17', 'Gigante filisteo.', 'Derrotado por una piedra.'),
-            createWord('Dalila', 'Jueces 16', 'Cortó el pelo.', 'Engañó al hombre más fuerte.'),
-            createWord('Jezabel', '1 Reyes 21', 'Pintada los ojos.', 'Reina que perseguía a Elías.'),
-            createWord('Herodes', 'Mateo 2', 'Mató niños.', 'Rey celoso del nacimiento de Jesús.'),
-            createWord('Judas', 'Lucas 22', 'Traidor.', 'Vendió al maestro por 30 monedas.'),
-            createWord('Pilato', 'Mateo 27', 'Se lavó las manos.', 'Condenó a Jesús siendo inocente.'),
-            createWord('Absalón', '2 Samuel 15', 'Hijo rebelde.', 'Se rebeló contra su padre David; pelo largo.'),
-            createWord('Aman', 'Ester 3', 'Quería matar judíos.', 'Enemigo de Mardoqueo, colgado en su horca.'),
-            createWord('Nabucodonosor', 'Daniel 3', 'Horno de fuego.', 'Rey que destruyó Jerusalén.'),
-            createWord('Saúl', '1 Samuel 18', 'Envidioso.', 'Persiguió a David por celos.'),
-            createWord('Balaam', 'Números 22', 'Amó el lucro.', 'Quiso maldecir a Israel pero no pudo.'),
-            createWord('Core', 'Números 16', 'Rebelión.', 'La tierra se lo tragó vivo.'),
-            createWord('Acab', '1 Reyes 21', 'Rey débil.', 'Esposo de Jezabel, codició una viña.'),
-            createWord('Herodes Antipas', 'Marcos 6', 'Cortó cabeza Juan.', 'Pidió la cabeza del bautista.'),
-            createWord('Ananías', 'Hechos 5', 'Mintió al Espíritu.', 'Cayó muerto por retener dinero.'),
-            createWord('Safira', 'Hechos 5', 'Esposa de Ananías.', 'Murió igual que su esposo.'),
-            createWord('Bestia', 'Apocalipsis 13', '666.', 'El anticristo del final.')
+    frases: {
+        id: 'frases', name: 'Frases Bíblicas', type: 'cultura', words: [
+            createWord('El Señor es mi pastor', 'Salmos 23:1', 'Nada me faltará.', 'Frase de funerales y consuelo.'),
+            createWord('Todo lo puedo en Cristo', 'Filipenses 4:13', 'Que me fortalece.', 'Frase de atletas y superación.'),
+            createWord('En el principio', 'Génesis 1:1', 'Creó Dios los cielos y la tierra.', 'Las primeras palabras.'),
+            createWord('No solo de pan vive el hombre', 'Mateo 4:4', 'Sino de toda palabra de Dios.', 'Respuesta a la tentación de comida.'),
+            createWord('Sed santos', '1 Pedro 1:16', 'Porque yo soy santo.', 'Mandamiento de pureza.'),
+            createWord('Y conoceréis la verdad', 'Juan 8:32', 'Y la verdad os hará libres.', 'Frase sobre libertad.'),
+            createWord('De tal manera amó Dios', 'Juan 3:16', 'Que ha dado a su Hijo unigénito.', 'El versículo más famoso.'),
+            createWord('Consumado es', 'Juan 19:30', 'Todo ha terminado.', 'Últimas palabras en la cruz.'),
+            createWord('He peleado la buena batalla', '2 Timoteo 4:7', 'He acabado la carrera.', 'Palabras de despedida de Pablo.'),
+            createWord('Varones de Galilea', 'Hechos 1:11', '¿Por qué estáis mirando al cielo?', 'Pregunta de los ángeles.'),
+            createWord('Yo y mi casa', 'Josué 24:15', 'Serviremos a Jehová.', 'Lema familiar.'),
+            createWord('Esforzaos y cobrad ánimo', 'Josué 1:9', 'No temas ni desmayes.', 'Consejo a un nuevo líder.'),
+            createWord('El justo por la fe vivirá', 'Romanos 1:17', 'Base de la reforma protestante.', 'Frase repetida en el NT.'),
+            createWord('Venga tu reino', 'Mateo 6:10', 'Hágase tu voluntad.', 'Parte del Padrenuestro.'),
+            createWord('No temáis', 'Lucas 2:10', 'Frase muy repetida en la Biblia por ángeles y Dios.', 'Orden de no tener miedo.'),
+            createWord('Amarás a tu prójimo', 'Levítico 19:18', 'Como a ti mismo.', 'La regla de oro.'),
+            createWord('La mujer sabia', 'Proverbios 14:1', 'Edifica su casa.', 'Consejo para esposas.'),
+            createWord('El principio de la sabiduría', 'Proverbios 1:7', 'Es el temor de Jehová.', 'Lema de los proverbios.'),
+            createWord('Cordero de Dios', 'Juan 1:29', 'Que quita el pecado del mundo.', 'Título de Jesús.'),
+            createWord('Yo soy el camino', 'Juan 14:6', 'Y la verdad y la vida.', 'Afirmación exclusiva de Jesús.')
+        ]
+    },
+    teologia: {
+        id: 'teologia', name: 'Conceptos Teológicos', type: 'cultura', words: [
+            createWord('Trinidad', 'Mateo 28:19', 'Dios es uno en tres personas: Padre, Hijo, Espíritu.', 'Tres en uno.'),
+            createWord('Gracia', 'Efesios 2:8', 'Regalo inmerecido de Dios para salvación.', 'Favor no ganado.'),
+            createWord('Fe', 'Hebreos 11:1', 'Certeza de lo que se espera, convicción de lo que no se ve.', 'Creer sin ver.'),
+            createWord('Pecado', 'Romanos 3:23', 'Transgresión de la ley de Dios, errar al blanco.', 'Hacer lo malo.'),
+            createWord('Salvación', 'Hechos 4:12', 'Ser librado de la condenación eterna.', 'Rescate del infierno.'),
+            createWord('Santificación', '1 Tesalonicenses 4:3', 'Proceso de ser hecho santo y apartado para Dios.', 'Limpiarse cada día.'),
+            createWord('Justificación', 'Romanos 5:1', 'Ser declarado justo legalmente ante Dios.', 'Declarado inocente.'),
+            createWord('Redención', 'Gálatas 3:13', 'Comprar de nuevo, liberar pagando un precio.', 'Pago de rescate.'),
+            createWord('Arrepentimiento', 'Hechos 2:38', 'Cambio de mente y dirección hacia Dios.', 'Dar la vuelta en U.'),
+            createWord('Bautismo', 'Romanos 6:4', 'Símbolo de muerte y resurrección con Cristo.', 'Mojarse en público.'),
+            createWord('Unción', '1 Juan 2:20', 'Capacitación y poder del Espíritu Santo.', 'Aceite sagrado.'),
+            createWord('Apologética', '1 Pedro 3:15', 'Defensa racional de la fe cristiana.', 'Defender lo que crees.'),
+            createWord('Escatología', 'Mateo 24', 'Estudio de los eventos finales y el regreso de Cristo.', 'Estudio del fin del mundo.'),
+            createWord('Evangelio', 'Marcos 1:1', 'Buenas noticias de salvación.', 'Buenas nuevas.'),
+            createWord('Iglesia', 'Mateo 16:18', 'Cuerpo de Cristo, asamblea de los creyentes.', 'Edificio o gente.'),
+            createWord('Soberanía', 'Salmos 115:3', 'Dios tiene control absoluto sobre todo.', 'Dios manda.'),
+            createWord('Omnipresencia', 'Salmos 139:7', 'Dios está en todo lugar al mismo tiempo.', 'Estar en todas partes.'),
+            createWord('Omnisciencia', 'Salmos 147:5', 'Dios lo sabe todo, pasado, presente y futuro.', 'Saberlo todo.'),
+            createWord('Encarnación', 'Juan 1:14', 'Dios se hizo hombre en Jesús.', 'Dios con piel.'),
+            createWord('Resurrección', '1 Corintios 15:20', 'Levantarse de los muertos con cuerpo glorificado.', 'Volver a la vida para siempre.')
+        ]
+    },
+    historia: {
+        id: 'historia', name: 'Historia de la Iglesia', type: 'cultura', words: [
+            createWord('Martín Lutero', 'Alemania 1517', 'Inició la Reforma Protestante con sus 95 tesis.', 'El monje del martillo.'),
+            createWord('Juan Calvino', 'Ginebra s.XVI', 'Reformador francés, escribió "La Institución".', 'Teólogo de la predestinación.'),
+            createWord('John Wesley', 'Inglaterra s.XVIII', 'Fundador del Metodismo, evangelista a caballo.', 'El del "corazón ardiente".'),
+            createWord('Charles Spurgeon', 'Londres s.XIX', 'El príncipe de los predicadores.', 'Fumaba puros y predicaba increíble.'),
+            createWord('San Agustín', 'Hipona s.IV', 'Padre de la iglesia, escribió "Confesiones".', 'Hijo de Mónica.'),
+            createWord('Constantino', 'Roma s.IV', 'Emperador que legalizó el cristianismo.', 'Vio una cruz en el cielo.'),
+            createWord('William Tyndale', 'Inglaterra s.XVI', 'Tradujo la Biblia al inglés y fue martirizado.', 'Murió estrangulado por traducir.'),
+            createWord('Billy Graham', 'EEUU s.XX', 'Evangelista que predicó a millones en estadios.', 'El pastor de los presidentes.'),
+            createWord('Reforma Protestante', 'Europa s.XVI', 'Movimiento de retorno a la Biblia y separación de Roma.', 'Cisma con la iglesia católica.'),
+            createWord('Gran Despertar', 'EEUU s.XVIII', 'Avivamientos masivos en las colonias americanas.', 'Mucha gente convirtiéndose.'),
+            createWord('Mártires', 'Roma s.I-III', 'Cristianos muertos por su fe en el circo romano.', 'Comida de leones.'),
+            createWord('Azusa Street', 'EEUU 1906', 'Avivamiento pentecostal en Los Ángeles.', 'Donde empezó el hablar en lenguas moderno.'),
+            createWord('Concilio de Nicea', '325 d.C.', 'Reunión donde se definió la divinidad de Jesús.', 'Reunión de obispos antiguos.'),
+            createWord('La Vulgata', 's.IV', 'Traducción de la Biblia al latín por Jerónimo.', 'Biblia en latín.'),
+            createWord('Dietrich Bonhoeffer', 'Alemania s.XX', 'Pastor luterano ejecutado por conspirar contra Hitler.', 'Escribió "El costo del discipulado".'),
+            createWord('Jim Elliot', 'Ecuador 1956', 'Misionero martirizado por los Huaorani.', 'Murió con una lanza.'),
+            createWord('Francisco de Asís', 'Italia s.XII', 'Fundador de los franciscanos, amaba la pobreza.', 'Hablaba con pájaros.'),
+            createWord('C.S. Lewis', 'Inglaterra s.XX', 'Apologista y autor de Narnia.', 'Escribió cuentos de leones y roperos.'),
+            createWord('Jonathan Edwards', 'EEUU s.XVIII', 'Teólogo puritano: "Pecadores en manos de un Dios airado".', 'Predicador muy serio.'),
+            createWord('George Müller', 'Inglaterra s.XIX', 'Fundó orfanatos confiando solo en la oración.', 'El hombre de fe y los huérfanos.')
+        ]
+    },
+    musica: {
+        id: 'musica', name: 'Música y Arte', type: 'cultura', words: [
+            createWord('Hillsong', 'Australia', 'Banda de adoración global famosa por "Oceans".', 'Los australianos famosos.'),
+            createWord('Marcos Witt', 'México', 'Pionero de la alabanza y adoración en español.', 'Cantó "Renuévame".'),
+            createWord('Jesús Adrián Romero', 'México', 'Cantante de baladas cristianas con voz suave.', 'Cantó "Princesas Mágicas".'),
+            createWord('Miel San Marcos', 'Guatemala', 'Banda de alabanza profética y júbilo.', 'Famosos por "No hay lugar más alto".'),
+            createWord('Barak', 'Rep. Dominicana', 'Grupo de adoración conocido por "Ven Espíritu Santo".', 'Música de fuego.'),
+            createWord('Redimi2', 'Rep. Dominicana', 'Rapero cristiano muy influyente.', 'El del "Trapstorno".'),
+            createWord('Händel', 'El Mesías', 'Compuso el oratorio con el famoso "Aleluya".', 'Música clásica muy famosa.'),
+            createWord('Tercer Cielo', 'Rep. Dominicana', 'Dúo pop romántico y cristiano.', 'Cantaron "Creeré".'),
+            createWord('Lauren Daigle', 'EEUU', 'Cantante con voz potente estilo Adele.', 'Cantó "You Say".'),
+            createWord('Coritos viejos', 'Tradición', 'Canciones cortas y alegres de escuela dominical.', 'Música de aplausos rápidos.'),
+            createWord('Himnario', 'Tradición', 'Libro de canciones antiguas y doctrinales.', 'Libro de cánticos viejos.'),
+            createWord('Danilo Montero', 'Costa Rica', 'Adorador y pastor en Lakewood.', 'Cantó "Cantaré de tu amor".'),
+            createWord('Stryper', 'EEUU', 'Banda de metal cristiano de los 80s.', 'Tiraban Biblias al público.'),
+            createWord('Kirk Franklin', 'EEUU', 'Director de coro gospel moderno.', 'Gospel con mucho ritmo.'),
+            createWord('Marcos Barrientos', 'México', 'Líder de adoración enfocado en el Espíritu Santo.', 'Cantó "Sin Reservas".'),
+            createWord('Christine DClario', 'EEUU/PR', 'Adoradora apasionada con voz potente.', 'Cantó "Como dijiste".'),
+            createWord('Petra', 'EEUU', 'Banda pionera del rock cristiano.', 'Rock de los papás.'),
+            createWord('Alex Campos', 'Colombia', 'Cantante de rock pop con voz peculiar.', 'Cantó "Al taller del maestro".'),
+            createWord('La Última Cena (Da Vinci)', 'Arte', 'Pintura famosa de Jesús y los discípulos.', 'Cuadro muy famoso.'),
+            createWord('David (Miguel Ángel)', 'Escultura', 'Estatua gigante del rey David en mármol.', 'Estatua desnuda famosa.')
+        ]
+    },
+    objetos: {
+        id: 'objetos', name: 'Objetos y Cosas', type: 'otros', words: [
+            createWord('Arca de Noé', 'Génesis 6', 'Barco gigante para salvar animales.', 'Zoológico flotante.'),
+            createWord('Arca del Pacto', 'Éxodo 25', 'Caja dorada con los 10 mandamientos.', 'Caja que mata si la tocas.'),
+            createWord('Honda de David', '1 Samuel 17', 'Arma simple que mató a un gigante.', 'Tira piedras.'),
+            createWord('Vara de Moisés', 'Éxodo 4', 'Se convertía en serpiente y abrió el mar.', 'Palo mágico de pastor.'),
+            createWord('Manto de Elías', '2 Reyes 2', 'Golpeó el río Jordán y lo abrió.', 'Ropa que deja herencia.'),
+            createWord('Túnica de José', 'Génesis 37', 'Ropa de muchos colores regalada por su papá.', 'Abrigo colorido.'),
+            createWord('Tablas de la Ley', 'Éxodo 31', 'Piedras escritas por el dedo de Dios.', 'Piedras con reglas.'),
+            createWord('Vellón de Gedeón', 'Jueces 6', 'Lana usada para pedir señal a Dios (seco/mojado).', 'Lana de oveja mojada.'),
+            createWord('Quijada de asno', 'Jueces 15', 'Arma con la que Sansón mató a 1000 hombres.', 'Hueso de animal muerto.'),
+            createWord('Pesebre', 'Lucas 2', 'Comedero de animales donde pusieron a Jesús.', 'Cuna humilde.'),
+            createWord('Cruz', 'Mateo 27', 'Instrumento de tortura romano, símbolo de redención.', 'Dos maderos cruzados.'),
+            createWord('Corona de espinas', 'Mateo 27', 'Burla de los soldados al Rey de los judíos.', 'Sombrero doloroso.'),
+            createWord('Clavos', 'Juan 20', 'Sujetaron a Jesús en la cruz.', 'Metales puntiagudos.'),
+            createWord('Lámpara de aceite', 'Mateo 25', 'Lo que llevaban las 10 vírgenes.', 'Luz antigua.'),
+            createWord('Redes', 'Lucas 5', 'Herramienta de trabajo de Pedro y Andrés.', 'Para atrapar peces.'),
+            createWord('Copa', 'Lucas 22', 'Usada en la última cena.', 'Vaso para vino.'),
+            createWord('Pan', 'Juan 6', 'Alimento multiplicado y cuerpo de Cristo.', 'Comida básica.'),
+            createWord('Incienso', 'Mateo 2', 'Regalo de los magos, aroma de oración.', 'Huele rico al quemarse.'),
+            createWord('Monedas (30)', 'Mateo 26', 'Precio de la traición de Judas.', 'Dinero de sangre.'),
+            createWord('Trompetas', 'Josué 6', 'Sonaron en Jericó y sonarán al final.', 'Instrumentos ruidosos.')
         ]
     }
 };
@@ -757,8 +833,7 @@ export default function App() {
     const [gameModeIndex, setGameModeIndex] = useState(0);
     const [gameFlow, setGameFlow] = useState('sanedrin');
     const [showCategoryToImpostor, setShowCategoryToImpostor] = useState(true);
-    const [aiHintEnabled, setAiHintEnabled] = useState(false);
-    const [aiContextEnabled, setAiContextEnabled] = useState(false);
+
     const [vibrationEnabled, setVibrationEnabled] = useState(true);
     const [soundEnabled, setSoundEnabled] = useState(true);
     const [musicEnabled, setMusicEnabled] = useState(true);
@@ -770,10 +845,6 @@ export default function App() {
     const [customTopic, setCustomTopic] = useState('');
     const [customWordInput, setCustomWordInput] = useState('');
     const [customRefInput, setCustomRefInput] = useState('');
-    const [isGeneratingCat, setIsGeneratingCat] = useState(false);
-    const [generatedAiHint, setGeneratedAiHint] = useState('');
-    const [generatedAiContext, setGeneratedAiContext] = useState('');
-    const [isGeneratingHint, setIsGeneratingHint] = useState(false);
     const [showCustomWordsModal, setShowCustomWordsModal] = useState(false);
     const [vigiliaRollIndex, setVigiliaRollIndex] = useState(0);
     const [showExitConfirm, setShowExitConfirm] = useState(false);
@@ -784,7 +855,6 @@ export default function App() {
     const [showBackupModal, setShowBackupModal] = useState(false);
     const [selectedVotes, setSelectedVotes] = useState([]);
     const [showVerseModal, setShowVerseModal] = useState(null);
-    const [showContextModal, setShowContextModal] = useState(false);
     const [fileInputRef, setFileInputRef] = useState(null);
 
     // States for Category Editing
@@ -895,24 +965,7 @@ export default function App() {
         });
     };
 
-    const handleGenerateCategory = async () => {
-        if (!customTopic.trim()) return;
-        setIsGeneratingCat(true);
-        triggerSound('magic');
-        const prompt = `Genera una lista de 25 palabras o conceptos bíblicos relacionados con el tema: "${customTopic}". Devuelve SOLO un array JSON válido sin markdown. Formato: [{ "term": "Palabra", "ref": "Cita Bíblica Corta (ej Juan 3:16)" }]. Lenguaje: Español.`;
-        const result = await callGemini(prompt, true);
-        if (result && Array.isArray(result)) {
-            const newId = `custom_${Date.now()}`;
-            const words = result.map(w => ({ ...w, active: true }));
-            const newCat = { id: newId, name: `✨ ${customTopic}`, words: words };
-            setCategories(prev => ({ ...prev, [newId]: newCat }));
-            setSelectedCats(prev => [...prev, newId]);
-            setCustomTopic('');
-        } else {
-            alert("No se pudo invocar la sabiduría necesaria.");
-        }
-        setIsGeneratingCat(false);
-    };
+
 
     const toggleCategory = (catId) => {
         triggerSound('click');
@@ -1051,9 +1104,7 @@ export default function App() {
                 setTimerEnabled(data.settings.timerEnabled);
                 setGameFlow(data.settings.gameFlow);
                 setShowCategoryToImpostor(data.settings.showCategoryToImpostor);
-                setAiHintEnabled(data.settings.aiHintEnabled);
-                setVibrationEnabled(data.settings.vibrationEnabled);
-                setAiContextEnabled(data.settings.aiContextEnabled);
+
             }
             if (data.selectedCats) setSelectedCats(data.selectedCats);
 
@@ -1113,8 +1164,6 @@ export default function App() {
         setGameData(null);
         setCurrentRevealIndex(0);
         setIsRevealing(false);
-        setGeneratedAiHint('');
-        setGeneratedAiContext('');
         setSelectedVotes([]);
         // No borramos stats aqui, solo en clearStats
         if (!vigiliaModeEnabled) setPartyStats({});
@@ -1174,16 +1223,7 @@ export default function App() {
         }
         const mainWord = wordList[Math.floor(Math.random() * wordList.length)];
 
-        setGeneratedAiHint('');
-        setGeneratedAiContext('');
 
-        if (aiHintEnabled) {
-            setGeneratedAiHint(mainWord.clue || "Pista no disponible.");
-        }
-
-        if (aiContextEnabled) {
-            setGeneratedAiContext(category.name + ": " + (mainWord.content || ""));
-        }
 
         let roles = Array(currentPlayers.length).fill('faithful');
         let impostorsIndices = new Set();
@@ -1238,7 +1278,6 @@ export default function App() {
 
     const nextReveal = () => {
         setIsRevealing(false);
-        setShowContextModal(false);
         if (currentRevealIndex + 1 >= players.length) setGameState('pre-game');
         else setCurrentRevealIndex(prev => prev + 1);
     };
@@ -1812,19 +1851,7 @@ export default function App() {
                                             <div className={`absolute w-3 h-3 bg-white rounded-full top-1 transition-all ${showCategoryToImpostor ? 'left-6' : 'left-1'}`} />
                                         </button>
                                     </div>
-                                    <div className="flex items-center justify-between">
-                                        <label className="text-xs text-slate-600 font-medium flex items-center gap-1">Ver Pista para el Fariseo <span className="text-amber-500 font-bold">?</span></label>
-                                        <button onClick={() => setAiHintEnabled(!aiHintEnabled)} className={`w-10 h-5 rounded-full relative transition ${aiHintEnabled ? 'bg-indigo-500' : 'bg-slate-300'}`}>
-                                            <div className={`absolute w-3 h-3 bg-white rounded-full top-1 transition-all ${aiHintEnabled ? 'left-6' : 'left-1'}`} />
-                                        </button>
-                                    </div>
 
-                                    <div className="flex items-center justify-between">
-                                        <label className="text-xs text-slate-600 font-medium flex items-center gap-1">Ver Pista para el Fiel <span className="text-indigo-500 font-bold">?</span></label>
-                                        <button onClick={() => setAiContextEnabled(!aiContextEnabled)} className={`w-10 h-5 rounded-full relative transition ${aiContextEnabled ? 'bg-indigo-500' : 'bg-slate-300'}`}>
-                                            <div className={`absolute w-3 h-3 bg-white rounded-full top-1 transition-all ${aiContextEnabled ? 'left-6' : 'left-1'}`} />
-                                        </button>
-                                    </div>
 
                                     <div className="flex items-center justify-between">
                                         <label className={`text-xs font-medium ${timerEnabled ? 'text-slate-600' : 'text-slate-300'}`}>Vibrar y sonar al terminar la ronda</label>
@@ -1850,48 +1877,35 @@ export default function App() {
                             </div>
 
                             {/* IA GENERATOR & ADD WORD */}
-                            <div className="space-y-2 mb-4">
-                                <div className="bg-indigo-50 p-2 rounded-lg border border-indigo-100 flex gap-2 items-center">
-                                    <Sparkles size={14} className="text-indigo-500 ml-1" />
+
+                            <div className="bg-slate-100 p-2 rounded-lg border border-slate-200 flex gap-2 items-center mb-4">
+                                <PlusCircle size={14} className="text-slate-500 ml-1" />
+                                <div className="flex-1 flex gap-2">
                                     <input
                                         type="text"
-                                        value="Próximamente..."
-                                        disabled={true}
-                                        readOnly
-                                        className="flex-1 text-xs bg-transparent focus:outline-none text-slate-400 placeholder-slate-300"
+                                        value={customWordInput}
+                                        onChange={(e) => setCustomWordInput(e.target.value)}
+                                        placeholder="Palabra..."
+                                        className="w-1/2 text-xs bg-transparent focus:outline-none text-slate-800"
                                     />
-                                    <button disabled={true} className="text-slate-300 p-1 cursor-not-allowed">
-                                        <ChevronRight size={16} />
-                                    </button>
+                                    <input
+                                        type="text"
+                                        value={customRefInput}
+                                        onChange={(e) => setCustomRefInput(e.target.value)}
+                                        placeholder="Ref (opcional)..."
+                                        className="w-1/2 text-xs bg-transparent focus:outline-none text-slate-500 border-l border-slate-300 pl-2"
+                                    />
                                 </div>
-                                <div className="bg-slate-100 p-2 rounded-lg border border-slate-200 flex gap-2 items-center"> {/* Removed relative */}
-                                    <PlusCircle size={14} className="text-slate-500 ml-1" />
-                                    <div className="flex-1 flex gap-2">
-                                        <input
-                                            type="text"
-                                            value={customWordInput}
-                                            onChange={(e) => setCustomWordInput(e.target.value)}
-                                            placeholder="Palabra..."
-                                            className="w-1/2 text-xs bg-transparent focus:outline-none text-slate-800"
-                                        />
-                                        <input
-                                            type="text"
-                                            value={customRefInput}
-                                            onChange={(e) => setCustomRefInput(e.target.value)}
-                                            placeholder="Ref (opcional)..."
-                                            className="w-1/2 text-xs bg-transparent focus:outline-none text-slate-500 border-l border-slate-300 pl-2"
-                                        />
-                                    </div>
-                                    <button onClick={handleAddCustomWord} disabled={!customWordInput} className="text-slate-600 p-1 hover:text-green-600">
-                                        <ChevronRight size={16} />
-                                    </button>
-                                    {/* Divider */}
-                                    <div className="w-px h-4 bg-slate-300 mx-1"></div>
-                                    <button onClick={() => setShowCustomWordsModal(true)} className="p-1 text-slate-400 hover:text-slate-600">
-                                        <Edit3 size={14} />
-                                    </button>
-                                </div>
+                                <button onClick={handleAddCustomWord} disabled={!customWordInput} className="text-slate-600 p-1 hover:text-green-600">
+                                    <ChevronRight size={16} />
+                                </button>
+                                {/* Divider */}
+                                <div className="w-px h-4 bg-slate-300 mx-1"></div>
+                                <button onClick={() => setShowCustomWordsModal(true)} className="p-1 text-slate-400 hover:text-slate-600">
+                                    <Edit3 size={14} />
+                                </button>
                             </div>
+
 
                             <div className="grid grid-cols-2 gap-2">
                                 {Object.values(categories).map((cat) => {
@@ -1919,440 +1933,426 @@ export default function App() {
                             <Play size={20} fill="currentColor" /> COMENZAR MISIÓN
                         </Button>
                     </div>
-                )}
+                )
+                }
 
                 {/* --- PANTALLA: ROLL ANIMATION --- */}
-                {gameState === 'rolling' && (
-                    <div className="flex flex-col items-center justify-center min-h-[60vh] mt-12">
-                        <div className="text-4xl animate-spin mb-4">🎲</div>
-                        <h2 className="text-2xl font-black text-white mb-2">Sorteando Modo...</h2>
-                        <div className="bg-white p-6 rounded-xl shadow-2xl scale-125 transition-all">
-                            <div className="text-indigo-600 mb-2 flex justify-center">{GAME_MODES[vigiliaRollIndex].icon}</div>
-                            <h3 className="text-xl font-bold text-slate-800 text-center">{GAME_MODES[vigiliaRollIndex].label}</h3>
+                {
+                    gameState === 'rolling' && (
+                        <div className="flex flex-col items-center justify-center min-h-[60vh] mt-12">
+                            <div className="text-4xl animate-spin mb-4">🎲</div>
+                            <h2 className="text-2xl font-black text-white mb-2">Sorteando Modo...</h2>
+                            <div className="bg-white p-6 rounded-xl shadow-2xl scale-125 transition-all">
+                                <div className="text-indigo-600 mb-2 flex justify-center">{GAME_MODES[vigiliaRollIndex].icon}</div>
+                                <h3 className="text-xl font-bold text-slate-800 text-center">{GAME_MODES[vigiliaRollIndex].label}</h3>
+                            </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
                 {/* --- PANTALLA 2: REVELACIÓN --- */}
-                {gameState === 'reveal' && (
-                    <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6 animate-in slide-in-from-right duration-300">
-                        <div className="text-center space-y-1">
-                            <h2 className="text-indigo-300 uppercase tracking-widest text-xs font-bold">Turno de</h2>
-                            <h1 className="text-3xl font-extrabold text-white">{gameData.players[currentRevealIndex].name}</h1>
-                        </div>
+                {
+                    gameState === 'reveal' && (
+                        <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6 animate-in slide-in-from-right duration-300">
+                            <div className="text-center space-y-1">
+                                <h2 className="text-indigo-300 uppercase tracking-widest text-xs font-bold">Turno de</h2>
+                                <h1 className="text-3xl font-extrabold text-white">{gameData.players[currentRevealIndex].name}</h1>
+                            </div>
 
-                        <div className="w-full max-w-sm">
-                            <div className={`relative w-full aspect-[4/5] bg-white rounded-xl shadow-2xl overflow-hidden transition-all duration-300`}>
-                                {!isRevealing ? (
-                                    <div
-                                        onClick={() => { setIsRevealing(true); triggerSound('reveal'); }}
-                                        className="absolute inset-0 bg-indigo-600 flex flex-col items-center justify-center p-6 text-center cursor-pointer active:bg-indigo-700"
-                                    >
-                                        <Eye size={48} className="text-indigo-200 mb-3 animate-bounce" />
-                                        <h3 className="text-xl font-bold text-white mb-2">Tocá para revelar</h3>
-                                        <p className="text-indigo-200 text-xs">Mirá que nadie te espíe el celular.</p>
-                                    </div>
-                                ) : (
-                                    <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-50">
-
-                                        <h3 className="text-slate-400 font-bold uppercase text-xs tracking-wider mb-2">Tu Rol es</h3>
-
-                                        {gameData.players[currentRevealIndex].role === 'impostor' ? (
-                                            <>
-                                                <div className="text-center mb-4 scale-75">
-                                                    <PhariseeMascot scale={0.8} />
-                                                </div>
-                                                <h2 className="text-2xl font-black text-red-600 mb-2">FARISEO</h2>
-                                                <p className="text-slate-600 text-sm mb-4">Infiltrate. Fingí que sabés de qué hablan.</p>
-
-                                                <div className="w-full space-y-2">
-                                                    {showCategoryToImpostor && (
-                                                        <div className="bg-slate-200 px-3 py-2 rounded w-full">
-                                                            <span className="text-slate-500 text-[10px] font-bold uppercase block">Categoría</span>
-                                                            <span className="text-slate-800 font-bold text-sm">{gameData.categoryName}</span>
-                                                        </div>
-                                                    )}
-
-                                                    {aiHintEnabled && (
-                                                        <div className="bg-amber-50 border border-amber-200 px-3 py-2 rounded w-full">
-                                                            <span className="text-amber-500 text-[10px] font-bold uppercase block flex items-center justify-center gap-1"><HelpCircle size={10} /> Pista Oculta</span>
-                                                            {isGeneratingHint ? (
-                                                                <div className="flex justify-center p-2"><Loader2 size={16} className="animate-spin text-amber-500" /></div>
-                                                            ) : (
-                                                                <p className="text-amber-800 font-bold text-xs italic">"{generatedAiHint}"</p>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <div className="bg-green-100 p-3 rounded-full mb-3"><BookOpen size={32} className="text-green-600" /></div>
-
-                                                {gameData.players[currentRevealIndex].specialRole === 'judas' ? (
-                                                    <h2 className="text-2xl font-black text-amber-600 mb-2">EL JUDAS</h2>
-                                                ) : gameData.players[currentRevealIndex].specialRole === 'etiope' ? (
-                                                    <h2 className="text-2xl font-black text-purple-600 mb-2">EL ETÍOPE</h2>
-                                                ) : gameData.players[currentRevealIndex].specialRole === 'profeta' ? (
-                                                    <h2 className="text-2xl font-black text-indigo-600 mb-2">EL PROFETA</h2>
-                                                ) : (
-                                                    <h2 className="text-2xl font-black text-indigo-600 mb-2">DISCÍPULO</h2>
-                                                )}
-
-                                                {gameData.players[currentRevealIndex].specialRole === 'etiope' ? (
-                                                    <div className="mb-4">
-                                                        <p className="text-slate-600 text-sm">No sabés la palabra, pero debés descubrirla.</p>
-                                                        <p className="text-red-500 font-bold text-xs mt-1 bg-red-50 p-1 rounded">⚠️ No digas que sos Etíope.</p>
-                                                    </div>
-                                                ) : (
-                                                    <p className="text-slate-600 text-sm mb-4">La palabra es:</p>
-                                                )}
-
-                                                <div className="bg-amber-100 border border-amber-300 px-4 py-3 rounded-lg w-full mb-2">
-                                                    <span className="text-xl font-black text-amber-800 block leading-tight">
-                                                        {gameData.players[currentRevealIndex].wordObj.term}
-                                                    </span>
-                                                    {gameData.players[currentRevealIndex].wordObj.ref && <span className="text-xs text-amber-700 mt-1 block italic">{gameData.players[currentRevealIndex].wordObj.ref}</span>}
-                                                </div>
-
-                                                {/* Faithful Context Hint */}
-                                                {aiContextEnabled && gameData.players[currentRevealIndex].role === 'faithful' && gameData.players[currentRevealIndex].specialRole !== 'etiope' && (
-                                                    <div className="mt-2 w-full">
-                                                        {showContextModal ? (
-                                                            <div className="bg-indigo-50 border border-indigo-200 p-2 rounded text-xs text-indigo-800 animate-in fade-in">
-                                                                <div className="flex justify-between items-start">
-                                                                    <span className="font-bold flex items-center gap-1"><HelpCircle size={10} /> Pista:</span>
-                                                                    <button onClick={(e) => { e.stopPropagation(); setShowContextModal(false); }}><X size={14} /></button>
-                                                                </div>
-                                                                <p className="mt-1 italic">{generatedAiContext || "Cargando sabiduría..."}</p>
-                                                            </div>
-                                                        ) : (
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); setShowContextModal(true); }}
-                                                                className="text-[10px] text-indigo-500 underline flex items-center justify-center gap-1 w-full"
-                                                            >
-                                                                ¿Qué es esto? <HelpCircle size={10} />
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                )}
-
-                                                {gameData.players[currentRevealIndex].specialRole === 'judas' && (
-                                                    <div className="bg-red-50 border border-red-200 p-2 rounded mt-2">
-                                                        <span className="text-xs text-red-800 block">Fariseos: {gameData.impostorsIndices.map(i => gameData.originalPlayers[i].name).join(', ')}</span>
-                                                    </div>
-                                                )}
-                                                {gameData.players[currentRevealIndex].specialRole === 'profeta' && (
-                                                    <div className="bg-indigo-50 border border-indigo-200 p-2 rounded mt-2 text-center">
-                                                        <span className="text-xs text-indigo-800 block font-bold mb-1">Visión Divina:</span>
-                                                        <span className="text-xs text-indigo-800 block">Fariseos: {gameData.impostorsIndices.map(i => gameData.originalPlayers[i].name).join(', ')}</span>
-                                                        <span className="text-[10px] text-red-500 font-bold block mt-1 bg-red-50 p-1 rounded">⚠️ NO PUEDES REVELAR TU ROL</span>
-                                                    </div>
-                                                )}
-
-                                                <div className="bg-slate-100 px-2 py-1 rounded w-full mt-2">
-                                                    <span className="text-slate-400 text-[10px] font-bold uppercase">Categoría: {gameData.categoryName}</span>
-                                                </div>
-                                            </>
-                                        )}
-
-                                        <div className="mt-auto w-full pt-4">
-                                            <Button onClick={nextReveal} variant="primary" className="py-2 text-sm">
-                                                <EyeOff size={16} /> Entendí, Ocultar
-                                            </Button>
+                            <div className="w-full max-w-sm">
+                                <div className={`relative w-full aspect-[4/5] bg-white rounded-xl shadow-2xl overflow-hidden transition-all duration-300`}>
+                                    {!isRevealing ? (
+                                        <div
+                                            onClick={() => { setIsRevealing(true); triggerSound('reveal'); }}
+                                            className="absolute inset-0 bg-indigo-600 flex flex-col items-center justify-center p-6 text-center cursor-pointer active:bg-indigo-700"
+                                        >
+                                            <Eye size={48} className="text-indigo-200 mb-3 animate-bounce" />
+                                            <h3 className="text-xl font-bold text-white mb-2">Tocá para revelar</h3>
+                                            <p className="text-indigo-200 text-xs">Mirá que nadie te espíe el celular.</p>
                                         </div>
-                                    </div>
-                                )}
+                                    ) : (
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-slate-50">
+
+                                            <h3 className="text-slate-400 font-bold uppercase text-xs tracking-wider mb-2">Tu Rol es</h3>
+
+                                            {gameData.players[currentRevealIndex].role === 'impostor' ? (
+                                                <>
+                                                    <div className="text-center mb-4 scale-75">
+                                                        <PhariseeMascot scale={0.8} />
+                                                    </div>
+                                                    <h2 className="text-2xl font-black text-red-600 mb-2">FARISEO</h2>
+                                                    <p className="text-slate-600 text-sm mb-4">Infiltrate. Fingí que sabés de qué hablan.</p>
+
+                                                    <div className="w-full space-y-2">
+                                                        {showCategoryToImpostor && (
+                                                            <div className="bg-slate-200 px-3 py-2 rounded w-full">
+                                                                <span className="text-slate-500 text-[10px] font-bold uppercase block">Categoría</span>
+                                                                <span className="text-slate-800 font-bold text-sm">{gameData.categoryName}</span>
+                                                            </div>
+                                                        )}
+
+
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div className="bg-green-100 p-3 rounded-full mb-3"><BookOpen size={32} className="text-green-600" /></div>
+
+                                                    {gameData.players[currentRevealIndex].specialRole === 'judas' ? (
+                                                        <h2 className="text-2xl font-black text-amber-600 mb-2">EL JUDAS</h2>
+                                                    ) : gameData.players[currentRevealIndex].specialRole === 'etiope' ? (
+                                                        <h2 className="text-2xl font-black text-purple-600 mb-2">EL ETÍOPE</h2>
+                                                    ) : gameData.players[currentRevealIndex].specialRole === 'profeta' ? (
+                                                        <h2 className="text-2xl font-black text-indigo-600 mb-2">EL PROFETA</h2>
+                                                    ) : (
+                                                        <h2 className="text-2xl font-black text-indigo-600 mb-2">DISCÍPULO</h2>
+                                                    )}
+
+                                                    {gameData.players[currentRevealIndex].specialRole === 'etiope' ? (
+                                                        <div className="mb-4">
+                                                            <p className="text-slate-600 text-sm">No sabés la palabra, pero debés descubrirla.</p>
+                                                            <p className="text-red-500 font-bold text-xs mt-1 bg-red-50 p-1 rounded">⚠️ No digas que sos Etíope.</p>
+                                                        </div>
+                                                    ) : (
+                                                        <p className="text-slate-600 text-sm mb-4">La palabra es:</p>
+                                                    )}
+
+                                                    <div className="bg-amber-100 border border-amber-300 px-4 py-3 rounded-lg w-full mb-2">
+                                                        <span className="text-xl font-black text-amber-800 block leading-tight">
+                                                            {gameData.players[currentRevealIndex].wordObj.term}
+                                                        </span>
+                                                        {gameData.players[currentRevealIndex].wordObj.ref && <span className="text-xs text-amber-700 mt-1 block italic">{gameData.players[currentRevealIndex].wordObj.ref}</span>}
+                                                    </div>
+
+
+
+                                                    {gameData.players[currentRevealIndex].specialRole === 'judas' && (
+                                                        <div className="bg-red-50 border border-red-200 p-2 rounded mt-2">
+                                                            <span className="text-xs text-red-800 block">Fariseos: {gameData.impostorsIndices.map(i => gameData.originalPlayers[i].name).join(', ')}</span>
+                                                        </div>
+                                                    )}
+                                                    {gameData.players[currentRevealIndex].specialRole === 'profeta' && (
+                                                        <div className="bg-indigo-50 border border-indigo-200 p-2 rounded mt-2 text-center">
+                                                            <span className="text-xs text-indigo-800 block font-bold mb-1">Visión Divina:</span>
+                                                            <span className="text-xs text-indigo-800 block">Fariseos: {gameData.impostorsIndices.map(i => gameData.originalPlayers[i].name).join(', ')}</span>
+                                                            <span className="text-[10px] text-red-500 font-bold block mt-1 bg-red-50 p-1 rounded">⚠️ NO PUEDES REVELAR TU ROL</span>
+                                                        </div>
+                                                    )}
+
+                                                    <div className="bg-slate-100 px-2 py-1 rounded w-full mt-2">
+                                                        <span className="text-slate-400 text-[10px] font-bold uppercase">Categoría: {gameData.categoryName}</span>
+                                                    </div>
+                                                </>
+                                            )}
+
+                                            <div className="mt-auto w-full pt-4">
+                                                <Button onClick={nextReveal} variant="primary" className="py-2 text-sm">
+                                                    <EyeOff size={16} /> Entendí, Ocultar
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
                 {/* --- PANTALLA 2.5: PREVIA --- */}
-                {gameState === 'pre-game' && (
-                    <div className="flex flex-col items-center justify-center min-h-[60vh] animate-in zoom-in duration-300 text-center px-6">
+                {
+                    gameState === 'pre-game' && (
+                        <div className="flex flex-col items-center justify-center min-h-[60vh] animate-in zoom-in duration-300 text-center px-6">
 
-                        {vigiliaModeEnabled && (
-                            <div className="mb-4 bg-amber-500 text-white px-4 py-1 rounded-full font-bold text-xs uppercase shadow-lg flex items-center gap-2">
-                                <Flame size={12} /> Ronda de Vigilia
+                            {vigiliaModeEnabled && (
+                                <div className="mb-4 bg-amber-500 text-white px-4 py-1 rounded-full font-bold text-xs uppercase shadow-lg flex items-center gap-2">
+                                    <Flame size={12} /> Ronda de Vigilia
+                                </div>
+                            )}
+
+                            <HelpCircle size={64} className="text-indigo-400 mb-4" />
+                            <h2 className="text-3xl font-black text-white mb-2">¿Listos?</h2>
+                            <div className="mb-6">
+                                <span className="text-indigo-300 text-xs font-bold uppercase tracking-widest">Modo Activo</span>
+                                <h3 className="text-xl font-bold text-white">{getActiveMode().label}</h3>
                             </div>
-                        )}
 
-                        <HelpCircle size={64} className="text-indigo-400 mb-4" />
-                        <h2 className="text-3xl font-black text-white mb-2">¿Listos?</h2>
-                        <div className="mb-6">
-                            <span className="text-indigo-300 text-xs font-bold uppercase tracking-widest">Modo Activo</span>
-                            <h3 className="text-xl font-bold text-white">{getActiveMode().label}</h3>
+                            {gameData.specialRoleIndices.zacarias !== -1 && (
+                                <div className="bg-purple-900/50 p-4 rounded-lg mb-4 border border-purple-500 w-full">
+                                    <h3 className="text-purple-300 font-bold uppercase text-xs">Modo Zacarías</h3>
+                                    <p className="text-white font-bold text-lg">
+                                        <MicOff className="inline mr-2" size={18} />
+                                        {gameData.players[gameData.specialRoleIndices.zacarias].name} está mudo.
+                                    </p>
+                                </div>
+                            )}
+                            {gameData.specialRoleIndices.sumo !== -1 && (
+                                <div className="bg-amber-900/50 p-4 rounded-lg mb-4 border border-amber-500 w-full">
+                                    <h3 className="text-amber-300 font-bold uppercase text-xs">Sumo Sacerdote</h3>
+                                    <p className="text-white font-bold text-lg">
+                                        <Crown className="inline mr-2" size={18} />
+                                        {gameData.players[gameData.specialRoleIndices.sumo].name} dirige el debate.
+                                    </p>
+                                </div>
+                            )}
+
+                            <div className="text-slate-400 text-sm mb-8 bg-slate-800 p-3 rounded-lg border border-slate-700 w-full">
+                                <span className="block text-indigo-400 font-bold text-xs uppercase mb-1">Instrucción</span>
+                                {gameData.modeId === 'escribas' ? "Nadie habla. Dibujá una pista relacionada a tu palabra." :
+                                    gameData.modeId === 'espadeo' ? "Citá o parafraseá un versículo relacionado a tu palabra." :
+                                        "Cada uno tiene que decir una palabra relacionada con lo que le tocó."}
+                            </div>
+
+                            <Button onClick={beginDebate} variant="secondary" className="text-xl py-4">
+                                QUE COMIENCE EL ESCUDRIÑO
+                            </Button>
                         </div>
-
-                        {gameData.specialRoleIndices.zacarias !== -1 && (
-                            <div className="bg-purple-900/50 p-4 rounded-lg mb-4 border border-purple-500 w-full">
-                                <h3 className="text-purple-300 font-bold uppercase text-xs">Modo Zacarías</h3>
-                                <p className="text-white font-bold text-lg">
-                                    <MicOff className="inline mr-2" size={18} />
-                                    {gameData.players[gameData.specialRoleIndices.zacarias].name} está mudo.
-                                </p>
-                            </div>
-                        )}
-                        {gameData.specialRoleIndices.sumo !== -1 && (
-                            <div className="bg-amber-900/50 p-4 rounded-lg mb-4 border border-amber-500 w-full">
-                                <h3 className="text-amber-300 font-bold uppercase text-xs">Sumo Sacerdote</h3>
-                                <p className="text-white font-bold text-lg">
-                                    <Crown className="inline mr-2" size={18} />
-                                    {gameData.players[gameData.specialRoleIndices.sumo].name} dirige el debate.
-                                </p>
-                            </div>
-                        )}
-
-                        <div className="text-slate-400 text-sm mb-8 bg-slate-800 p-3 rounded-lg border border-slate-700 w-full">
-                            <span className="block text-indigo-400 font-bold text-xs uppercase mb-1">Instrucción</span>
-                            {gameData.modeId === 'escribas' ? "Nadie habla. Dibujá una pista relacionada a tu palabra." :
-                                gameData.modeId === 'espadeo' ? "Citá o parafraseá un versículo relacionado a tu palabra." :
-                                    "Cada uno tiene que decir una palabra relacionada con lo que le tocó."}
-                        </div>
-
-                        <Button onClick={beginDebate} variant="secondary" className="text-xl py-4">
-                            QUE COMIENCE EL ESCUDRIÑO
-                        </Button>
-                    </div>
-                )}
+                    )
+                }
 
                 {/* --- PANTALLA 3: JUGANDO --- */}
-                {gameState === 'playing' && (
-                    <div className="space-y-6 animate-in fade-in duration-500 mt-4">
+                {
+                    gameState === 'playing' && (
+                        <div className="space-y-6 animate-in fade-in duration-500 mt-4">
 
-                        <div className="text-center relative">
-                            {timerEnabled ? (
-                                <div className="inline-flex flex-col items-center justify-center w-40 h-40 rounded-full border-4 border-slate-700 bg-slate-800 shadow-inner mb-4">
-                                    <div className={`text-5xl font-black tabular-nums tracking-tighter ${timeLeft < 30 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
-                                        {formatTime(timeLeft)}
+                            <div className="text-center relative">
+                                {timerEnabled ? (
+                                    <div className="inline-flex flex-col items-center justify-center w-40 h-40 rounded-full border-4 border-slate-700 bg-slate-800 shadow-inner mb-4">
+                                        <div className={`text-5xl font-black tabular-nums tracking-tighter ${timeLeft < 30 ? 'text-red-500 animate-pulse' : 'text-white'}`}>
+                                            {formatTime(timeLeft)}
+                                        </div>
+                                        <span className="text-xs text-slate-500 uppercase font-bold mt-1">Tiempo Restante</span>
                                     </div>
-                                    <span className="text-xs text-slate-500 uppercase font-bold mt-1">Tiempo Restante</span>
-                                </div>
-                            ) : (
-                                <div className="mb-8">
-                                    <Clock size={48} className="mx-auto text-slate-600 mb-2" />
-                                    <span className="text-slate-400 font-bold">Tiempo Libre</span>
-                                </div>
-                            )}
+                                ) : (
+                                    <div className="mb-8">
+                                        <Clock size={48} className="mx-auto text-slate-600 mb-2" />
+                                        <span className="text-slate-400 font-bold">Tiempo Libre</span>
+                                    </div>
+                                )}
 
-                            <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700 mx-4">
-                                <span className="text-slate-400 text-[10px] uppercase tracking-wider block mb-1">La ronda comienza con</span>
-                                <span className="text-xl font-bold text-amber-400">{gameData.starterName}</span>
+                                <div className="bg-slate-800/80 p-3 rounded-lg border border-slate-700 mx-4">
+                                    <span className="text-slate-400 text-[10px] uppercase tracking-wider block mb-1">La ronda comienza con</span>
+                                    <span className="text-xl font-bold text-amber-400">{gameData.starterName}</span>
+                                </div>
+                            </div>
+
+                            <div className="bg-slate-800 rounded-lg p-4 mx-2 text-center border border-slate-700">
+                                {showCategoryToImpostor ? (
+                                    <>
+                                        <h3 className="text-slate-500 text-xs uppercase font-bold mb-1">Categoría</h3>
+                                        <p className="text-xl font-bold text-white">{gameData.categoryName}</p>
+                                    </>
+                                ) : (
+                                    <p className="text-slate-500 text-sm italic">Categoría oculta para evitar soplos</p>
+                                )}
+                            </div>
+
+                            <div className="space-y-2 px-4 relative">
+                                <div className="w-full">
+                                    <Button onClick={() => setGameState('vote')} variant="danger" className="py-4 text-lg shadow-lg shadow-red-900/50">
+                                        <Gavel size={24} /> {timeLeft === 0 && timerEnabled ? '¡TIEMPO! A VOTAR' : 'VOTAR AHORA'}
+                                    </Button>
+                                </div>
+                                <p className="text-center text-slate-500 text-[10px]">
+                                    Presioná cuando {timerEnabled ? 'el tiempo acabe o ' : ''}crean haber encontrado al infiltrado.
+                                </p>
                             </div>
                         </div>
-
-                        <div className="bg-slate-800 rounded-lg p-4 mx-2 text-center border border-slate-700">
-                            {showCategoryToImpostor ? (
-                                <>
-                                    <h3 className="text-slate-500 text-xs uppercase font-bold mb-1">Categoría</h3>
-                                    <p className="text-xl font-bold text-white">{gameData.categoryName}</p>
-                                </>
-                            ) : (
-                                <p className="text-slate-500 text-sm italic">Categoría oculta para evitar soplos</p>
-                            )}
-                        </div>
-
-                        <div className="space-y-2 px-4 relative">
-                            <div className="w-full">
-                                <Button onClick={() => setGameState('vote')} variant="danger" className="py-4 text-lg shadow-lg shadow-red-900/50">
-                                    <Gavel size={24} /> {timeLeft === 0 && timerEnabled ? '¡TIEMPO! A VOTAR' : 'VOTAR AHORA'}
-                                </Button>
-                            </div>
-                            <p className="text-center text-slate-500 text-[10px]">
-                                Presioná cuando {timerEnabled ? 'el tiempo acabe o ' : ''}crean haber encontrado al infiltrado.
-                            </p>
-                        </div>
-                    </div>
-                )}
+                    )
+                }
 
                 {/* --- PANTALLA 4: VOTACIÓN --- */}
-                {gameState === 'vote' && (
-                    <div className="animate-in slide-in-from-bottom duration-300 pt-4">
-                        <h2 className="text-center text-2xl font-bold text-white mb-2">¿Quién es el Fariseo?</h2>
-                        <p className="text-center text-slate-400 text-sm mb-6">
-                            {gameData.modeId === 'normal' && impostorCount > 1 ? "Seleccioná a los sospechosos y confirma." : "Tocá al sospechoso para expulsarlo."}
-                        </p>
+                {
+                    gameState === 'vote' && (
+                        <div className="animate-in slide-in-from-bottom duration-300 pt-4">
+                            <h2 className="text-center text-2xl font-bold text-white mb-2">¿Quién es el Fariseo?</h2>
+                            <p className="text-center text-slate-400 text-sm mb-6">
+                                {gameData.modeId === 'normal' && impostorCount > 1 ? "Seleccioná a los sospechosos y confirma." : "Tocá al sospechoso para expulsarlo."}
+                            </p>
 
-                        <div className="grid gap-3 max-h-[60vh] overflow-y-auto pb-20">
-                            {gameData.players.map(p => {
-                                if (p.isDead) return null;
-                                const isSelected = selectedVotes.includes(p.id);
-                                return (
-                                    <button
-                                        key={p.id}
-                                        onClick={() => {
-                                            if (gameFlow === 'sanedrin' && impostorCount > 1) {
-                                                toggleVote(p.id);
-                                            } else {
-                                                ejectPlayer(p.id);
-                                            }
-                                        }}
-                                        className={`
+                            <div className="grid gap-3 max-h-[60vh] overflow-y-auto pb-20">
+                                {gameData.players.map(p => {
+                                    if (p.isDead) return null;
+                                    const isSelected = selectedVotes.includes(p.id);
+                                    return (
+                                        <button
+                                            key={p.id}
+                                            onClick={() => {
+                                                if (gameFlow === 'sanedrin' && impostorCount > 1) {
+                                                    toggleVote(p.id);
+                                                } else {
+                                                    ejectPlayer(p.id);
+                                                }
+                                            }}
+                                            className={`
                                     border p-4 rounded-xl flex items-center justify-between group transition-all
                                     ${isSelected
-                                                ? 'bg-red-900/40 border-red-500 ring-2 ring-red-500'
-                                                : 'bg-slate-800 border-slate-600 hover:bg-slate-700'}
+                                                    ? 'bg-red-900/40 border-red-500 ring-2 ring-red-500'
+                                                    : 'bg-slate-800 border-slate-600 hover:bg-slate-700'}
                                 `}
-                                    >
-                                        <span className="font-bold text-lg">{p.name}</span>
-                                        <div className={`p-2 rounded-full transition-colors ${isSelected ? 'bg-red-500 text-white' : 'bg-slate-700 text-slate-400'}`}>
-                                            {isSelected ? <CheckCircle size={20} /> : <Gavel size={20} />}
-                                        </div>
-                                    </button>
-                                )
-                            })}
-                        </div>
-
-                        {/* Confirm Button for Multi-Select */}
-                        {gameFlow === 'sanedrin' && impostorCount > 1 && (
-                            <div className="fixed bottom-6 left-6 right-6">
-                                <Button
-                                    onClick={confirmVote}
-                                    disabled={selectedVotes.length !== impostorCount}
-                                    variant={selectedVotes.length === impostorCount ? 'danger' : 'outline'}
-                                    className="shadow-xl"
-                                >
-                                    Confirmar Votos ({selectedVotes.length}/{impostorCount})
-                                </Button>
+                                        >
+                                            <span className="font-bold text-lg">{p.name}</span>
+                                            <div className={`p-2 rounded-full transition-colors ${isSelected ? 'bg-red-500 text-white' : 'bg-slate-700 text-slate-400'}`}>
+                                                {isSelected ? <CheckCircle size={20} /> : <Gavel size={20} />}
+                                            </div>
+                                        </button>
+                                    )
+                                })}
                             </div>
-                        )}
 
-                        <div className="mt-6 mb-20">
-                            <Button onClick={() => setGameState('playing')} variant="outline" className="bg-transparent border-slate-600 text-slate-400">
-                                Cancelar, seguir debatiendo
-                            </Button>
-                        </div>
-                    </div>
-                )}
-
-                {/* --- PANTALLA 5: RESULTADO RONDA (ARMAGEDÓN) --- */}
-                {gameState === 'round-result' && (
-                    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center animate-in zoom-in duration-300 px-4">
-                        <div className="mb-6">
-                            {gameData.lastEjected.role === 'faithful' ? (
-                                <div className="text-green-500 bg-green-500/10 p-4 rounded-full inline-block mb-4"><UserMinus size={48} /></div>
-                            ) : (
-                                <div className="text-red-500 bg-red-500/10 p-4 rounded-full inline-block mb-4">
-                                    <PhariseeMascot scale={0.5} />
+                            {/* Confirm Button for Multi-Select */}
+                            {gameFlow === 'sanedrin' && impostorCount > 1 && (
+                                <div className="fixed bottom-6 left-6 right-6">
+                                    <Button
+                                        onClick={confirmVote}
+                                        disabled={selectedVotes.length !== impostorCount}
+                                        variant={selectedVotes.length === impostorCount ? 'danger' : 'outline'}
+                                        className="shadow-xl"
+                                    >
+                                        Confirmar Votos ({selectedVotes.length}/{impostorCount})
+                                    </Button>
                                 </div>
                             )}
-                            <h2 className="text-3xl font-bold text-white mb-2">{gameData.lastEjected.name}</h2>
-                            <p className="text-xl text-slate-300">
-                                era <span className={gameData.lastEjected.role === 'faithful' ? 'text-green-400 font-bold' : 'text-red-500 font-bold'}>
-                                    {gameData.lastEjected.role === 'faithful' ? 'un Discípulo Fiel' : 'el Fariseo'}
-                                </span>
-                            </p>
+
+                            <div className="mt-6 mb-20">
+                                <Button onClick={() => setGameState('playing')} variant="outline" className="bg-transparent border-slate-600 text-slate-400">
+                                    Cancelar, seguir debatiendo
+                                </Button>
+                            </div>
                         </div>
+                    )
+                }
 
-                        <p className="text-slate-400 mb-8 bg-slate-800 p-3 rounded text-sm">
-                            {gameData.lastEjected.role === 'faithful'
-                                ? "¡Echaron a un inocente! El Fariseo sigue entre nosotros..."
-                                : "¡Lo atraparon! Pero... ¿quedan más?"}
-                        </p>
+                {/* --- PANTALLA 5: RESULTADO RONDA (ARMAGEDÓN) --- */}
+                {
+                    gameState === 'round-result' && (
+                        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center animate-in zoom-in duration-300 px-4">
+                            <div className="mb-6">
+                                {gameData.lastEjected.role === 'faithful' ? (
+                                    <div className="text-green-500 bg-green-500/10 p-4 rounded-full inline-block mb-4"><UserMinus size={48} /></div>
+                                ) : (
+                                    <div className="text-red-500 bg-red-500/10 p-4 rounded-full inline-block mb-4">
+                                        <PhariseeMascot scale={0.5} />
+                                    </div>
+                                )}
+                                <h2 className="text-3xl font-bold text-white mb-2">{gameData.lastEjected.name}</h2>
+                                <p className="text-xl text-slate-300">
+                                    era <span className={gameData.lastEjected.role === 'faithful' ? 'text-green-400 font-bold' : 'text-red-500 font-bold'}>
+                                        {gameData.lastEjected.role === 'faithful' ? 'un Discípulo Fiel' : 'el Fariseo'}
+                                    </span>
+                                </p>
+                            </div>
 
-                        <Button onClick={continueArmageddon} variant="primary">
-                            <ChevronRight size={20} /> Siguiente Ronda
-                        </Button>
-                    </div>
-                )}
+                            <p className="text-slate-400 mb-8 bg-slate-800 p-3 rounded text-sm">
+                                {gameData.lastEjected.role === 'faithful'
+                                    ? "¡Echaron a un inocente! El Fariseo sigue entre nosotros..."
+                                    : "¡Lo atraparon! Pero... ¿quedan más?"}
+                            </p>
+
+                            <Button onClick={continueArmageddon} variant="primary">
+                                <ChevronRight size={20} /> Siguiente Ronda
+                            </Button>
+                        </div>
+                    )
+                }
 
                 {/* --- PANTALLA 6: RESULTADO FINAL --- */}
-                {(gameState === 'result-faithful' || gameState === 'result-impostor') && (
-                    <div className="space-y-6 animate-in zoom-in duration-300 pt-6">
+                {
+                    (gameState === 'result-faithful' || gameState === 'result-impostor') && (
+                        <div className="space-y-6 animate-in zoom-in duration-300 pt-6">
 
-                        {gameState === 'result-faithful' ? (
-                            <div className="text-center">
-                                <h2 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-600 mb-2">¡VICTORIA!</h2>
-                                <p className="text-white font-medium">El rebaño está a salvo.</p>
-                            </div>
-                        ) : (
-                            <div className="text-center">
-                                <h2 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-orange-600 mb-2">¡AY DE VOSOTROS!</h2>
-                                <p className="text-white font-medium">Los Fariseos ganaron.</p>
-                            </div>
-                        )}
-
-                        <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 text-center relative overflow-hidden">
-                            <div className="relative z-10">
-                                <h3 className="text-indigo-300 text-xs uppercase tracking-widest font-bold mb-2">La palabra era</h3>
-                                <div className="bg-slate-900 rounded-lg py-3 px-4 mb-4 inline-block">
-                                    <span className="text-2xl font-black text-white block">
-                                        {gameData.modeId === 'babel' ? '¡Eran distintas!' : gameData.players[0].wordObj.term}
-                                    </span>
+                            {gameState === 'result-faithful' ? (
+                                <div className="text-center">
+                                    <h2 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-600 mb-2">¡VICTORIA!</h2>
+                                    <p className="text-white font-medium">El rebaño está a salvo.</p>
                                 </div>
+                            ) : (
+                                <div className="text-center">
+                                    <h2 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-orange-600 mb-2">¡AY DE VOSOTROS!</h2>
+                                    <p className="text-white font-medium">Los Fariseos ganaron.</p>
+                                </div>
+                            )}
 
-                                <div className="space-y-2 text-left">
-                                    <h3 className="text-slate-500 text-xs uppercase font-bold border-b border-slate-700 pb-1">Roles Revelados</h3>
-                                    <div className="max-h-48 overflow-y-auto">
-                                        {gameData.players.map(p => (
-                                            <div key={p.id} className={`flex justify-between items-center text-sm p-2 rounded ${p.role === 'impostor' ? 'bg-red-500/10 text-red-200' : 'text-slate-300'}`}>
-                                                <span className={p.isDead ? 'line-through opacity-50' : ''}>{p.name}</span>
-                                                <span className="font-bold text-xs uppercase flex items-center gap-1">
-                                                    {p.role === 'impostor' ? 'Fariseo' : 'Fiel'}
-                                                    {p.specialRole === 'judas' && ' (Judas)'}
-                                                    {p.specialRole === 'etiope' && ' (Etíope)'}
-                                                    {p.specialRole === 'profeta' && ' (Profeta)'}
-                                                </span>
-                                            </div>
-                                        ))}
+                            <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 text-center relative overflow-hidden">
+                                <div className="relative z-10">
+                                    <h3 className="text-indigo-300 text-xs uppercase tracking-widest font-bold mb-2">La palabra era</h3>
+                                    <div className="bg-slate-900 rounded-lg py-3 px-4 mb-4 inline-block">
+                                        <span className="text-2xl font-black text-white block">
+                                            {gameData.modeId === 'babel' ? '¡Eran distintas!' : gameData.players[0].wordObj.term}
+                                        </span>
+                                    </div>
+
+                                    <div className="space-y-2 text-left">
+                                        <h3 className="text-slate-500 text-xs uppercase font-bold border-b border-slate-700 pb-1">Roles Revelados</h3>
+                                        <div className="max-h-48 overflow-y-auto">
+                                            {gameData.players.map(p => (
+                                                <div key={p.id} className={`flex justify-between items-center text-sm p-2 rounded ${p.role === 'impostor' ? 'bg-red-500/10 text-red-200' : 'text-slate-300'}`}>
+                                                    <span className={p.isDead ? 'line-through opacity-50' : ''}>{p.name}</span>
+                                                    <span className="font-bold text-xs uppercase flex items-center gap-1">
+                                                        {p.role === 'impostor' ? 'Fariseo' : 'Fiel'}
+                                                        {p.specialRole === 'judas' && ' (Judas)'}
+                                                        {p.specialRole === 'etiope' && ' (Etíope)'}
+                                                        {p.specialRole === 'profeta' && ' (Profeta)'}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
-                        {/* VIGILIA STATS */}
-                        {vigiliaModeEnabled && Object.keys(partyStats).length > 0 && (
-                            <div className="bg-amber-100 rounded-xl p-4 border-2 border-amber-300 mt-4 shadow-lg animate-in slide-in-from-bottom">
-                                <div className="flex items-center justify-center gap-2 mb-3 border-b border-amber-200 pb-2">
-                                    <Trophy size={20} className="text-amber-600" />
-                                    <h3 className="font-black text-amber-800 uppercase tracking-widest text-sm">Tabla Vigilia</h3>
-                                    <div className="ml-auto bg-amber-200 px-2 py-1 rounded text-[10px] font-bold text-amber-800">
-                                        Rondas: {vigiliaRounds}
+                            {/* VIGILIA STATS */}
+                            {vigiliaModeEnabled && Object.keys(partyStats).length > 0 && (
+                                <div className="bg-amber-100 rounded-xl p-4 border-2 border-amber-300 mt-4 shadow-lg animate-in slide-in-from-bottom">
+                                    <div className="flex items-center justify-center gap-2 mb-3 border-b border-amber-200 pb-2">
+                                        <Trophy size={20} className="text-amber-600" />
+                                        <h3 className="font-black text-amber-800 uppercase tracking-widest text-sm">Tabla Vigilia</h3>
+                                        <div className="ml-auto bg-amber-200 px-2 py-1 rounded text-[10px] font-bold text-amber-800">
+                                            Rondas: {vigiliaRounds}
+                                        </div>
+                                        <button onClick={() => setShowResetStatsConfirm(true)} className="text-[10px] text-red-600 bg-red-100 px-2 py-1 rounded hover:bg-red-200 border border-red-200 flex items-center gap-1"><RefreshCw size={10} /> Reset</button>
                                     </div>
-                                    <button onClick={() => setShowResetStatsConfirm(true)} className="text-[10px] text-red-600 bg-red-100 px-2 py-1 rounded hover:bg-red-200 border border-red-200 flex items-center gap-1"><RefreshCw size={10} /> Reset</button>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-xs text-left">
+                                            <thead>
+                                                <tr className="text-amber-700 border-b border-amber-200">
+                                                    <th className="pb-1 pl-1">Jugador</th>
+                                                    <th className="pb-1 text-center">Victorias</th>
+                                                    <th className="pb-1 text-center">Engaños</th>
+                                                    <th className="pb-1 text-center">Martirios</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="text-amber-900 font-bold">
+                                                {players.map(p => {
+                                                    const stats = partyStats[p.id] || { faithfulWins: 0, impostorWins: 0, ejected: 0 };
+                                                    return (
+                                                        <tr key={p.id} className="border-b border-amber-200/50 last:border-none">
+                                                            <td className="py-1 pl-1">{p.name}</td>
+                                                            <td className="py-1 text-center text-green-700">{stats.faithfulWins}</td>
+                                                            <td className="py-1 text-center text-red-600">{stats.impostorWins}</td>
+                                                            <td className="py-1 text-center text-slate-500">{stats.ejected}</td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-xs text-left">
-                                        <thead>
-                                            <tr className="text-amber-700 border-b border-amber-200">
-                                                <th className="pb-1 pl-1">Jugador</th>
-                                                <th className="pb-1 text-center">Victorias</th>
-                                                <th className="pb-1 text-center">Engaños</th>
-                                                <th className="pb-1 text-center">Martirios</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="text-amber-900 font-bold">
-                                            {players.map(p => {
-                                                const stats = partyStats[p.id] || { faithfulWins: 0, impostorWins: 0, ejected: 0 };
-                                                return (
-                                                    <tr key={p.id} className="border-b border-amber-200/50 last:border-none">
-                                                        <td className="py-1 pl-1">{p.name}</td>
-                                                        <td className="py-1 text-center text-green-700">{stats.faithfulWins}</td>
-                                                        <td className="py-1 text-center text-red-600">{stats.impostorWins}</td>
-                                                        <td className="py-1 text-center text-slate-500">{stats.ejected}</td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-3 pt-4">
+                                <Button onClick={() => startGame(null)} variant="primary">
+                                    ¡Otra Ronda!
+                                </Button>
+                                <Button onClick={handleReset} variant="outline" className="bg-transparent text-slate-200 border-slate-500 hover:bg-slate-800 hover:text-white">
+                                    Cambiar ajustes
+                                </Button>
                             </div>
-                        )}
-
-                        <div className="grid grid-cols-2 gap-3 pt-4">
-                            <Button onClick={() => startGame(null)} variant="primary">
-                                ¡Otra Ronda!
-                            </Button>
-                            <Button onClick={handleReset} variant="outline" className="bg-transparent text-slate-200 border-slate-500 hover:bg-slate-800 hover:text-white">
-                                Cambiar ajustes
-                            </Button>
                         </div>
-                    </div>
-                )}
+                    )
+                }
 
-            </main>
-        </div>
+            </main >
+        </div >
     );
 
 }
